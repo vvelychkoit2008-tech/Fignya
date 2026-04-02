@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -17,11 +17,39 @@
             <div class="toolbar-left">
                 <div class="logo">Fihnya v4.0</div>
                 <div class="file-name">Без назви</div>
+                <div class="header-divider"></div>
+                <div class="default-styles" id="default-styles">
+                    <div class="header-actions">
+                        <button class="header-action-btn" id="btn-undo" title="Відмінити (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
+                        <button class="header-action-btn" id="btn-redo" title="Повторити (Ctrl+Y)"><i data-lucide="redo-2"></i></button>
+                        <div class="header-dividermini"></div>
+                        <button class="header-action-btn" id="btn-group-cmd" title="Згрупувати (Ctrl+G)"><i data-lucide="group"></i></button>
+                        <button class="header-action-btn" id="btn-ungroup-cmd" title="Розгрупувати (Ctrl+Shift+G)"><i data-lucide="ungroup"></i></button>
+                        <div class="header-dividermini"></div>
+                        <button class="header-action-btn header-danger" id="btn-delete-cmd" title="Видалити (Del)"><i data-lucide="trash-2"></i></button>
+                    </div>
+                    <div class="header-divider"></div>
+                    <!-- Contextual Toolbar -->
+                    <div id="contextual-toolbar" class="hidden"></div>
+                    <div class="header-divider"></div>
+                    <div class="style-item-wrapper">
+                        <div class="style-preview" id="preview-default-fill" title="Колір заливки за замовчуванням" style="background:#D9D9D9"></div>
+                        <div class="style-preview" id="preview-default-stroke" title="Колір контуру за замовчуванням" style="background:#000000"></div>
+                        <div class="style-input" title="Товщина контуру">
+                            <input type="number" id="input-default-stroke-width" value="1" min="0" max="100">
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="toolbar-center">
                 <!-- Пусто, інструменти тепер знизу -->
             </div>
             <div class="toolbar-right">
+                <div class="zoom-control" style="display: flex; align-items: center; gap: 4px; border-right: 1px solid rgba(255,255,255,0.1); padding-right: 8px; margin-right: 8px;">
+                    <button class="action-btn" id="btn-zoom-out" title="Зменшити"><i data-lucide="minus"></i></button>
+                    <span id="zoom-level" style="font-size: 12px; min-width: 45px; text-align: center; cursor: pointer;" title="Скинути зум до 100%">100%</span>
+                    <button class="action-btn" id="btn-zoom-in" title="Збільшити"><i data-lucide="plus"></i></button>
+                </div>
                 <div class="mode-switch">
                     <button class="mode-btn active" data-mode="design">Design</button>
                     <button class="mode-btn" data-mode="prototype">Prototype</button>
@@ -30,8 +58,17 @@
                 <button class="action-btn" id="btn-play" title="Запустити прототип" style="display:none;">
                     <i data-lucide="play"></i>
                 </button>
-                <button class="action-btn" id="btn-export" title="Експорт">
-                    <i data-lucide="download"></i>
+                <button class="action-btn" id="btn-export-png" title="Експорт PNG">
+                    <i data-lucide="image"></i>
+                </button>
+                <button class="action-btn" id="btn-export-svg" title="Експорт SVG">
+                    <i data-lucide="file-code"></i>
+                </button>
+                <button class="action-btn" id="btn-export-json" title="Зберегти JSON">
+                    <i data-lucide="save"></i>
+                </button>
+                <button class="action-btn" id="btn-import-json" title="Завантажити JSON">
+                    <i data-lucide="folder-open"></i>
                 </button>
             </div>
         </header>
@@ -65,14 +102,16 @@
             <!-- BOTTOM FLOATING TOOLBAR -->
             <div class="bottom-toolbar">
                 <div class="tools-group shadow-lg">
-                    <button class="tool-btn active" data-tool="select" title="Вказівник (V)"><i data-lucide="mouse-pointer-2"></i></button>
-                    <button class="tool-btn" data-tool="frame" title="Фрейм / AutoLayout (F)"><i data-lucide="frame"></i></button>
+                    <button class="tool-btn active" data-tool="select" title="Вказівник (V)" data-hotkey="V"><i data-lucide="mouse-pointer-2"></i></button>
+                    <button class="tool-btn" data-tool="frame" title="Фрейм / AutoLayout (F)" data-hotkey="F"><i data-lucide="frame"></i></button>
                     <div class="tool-divider"></div>
-                    <button class="tool-btn" data-tool="rectangle" title="Прямокутник (R)"><i data-lucide="square"></i></button>
-                    <button class="tool-btn" data-tool="ellipse" title="Еліпс (O)"><i data-lucide="circle"></i></button>
-                    <button class="tool-btn" data-tool="pen" title="Векторне перо (P)"><i data-lucide="pen-tool"></i></button>
-                    <button class="tool-btn" data-tool="text" title="Текст (T)"><i data-lucide="type"></i></button>
-                    <button class="tool-btn" data-tool="image" title="Зображення (I)" id="tool-image"><i data-lucide="image"></i></button>
+                    <button class="tool-btn" data-tool="rectangle" title="Прямокутник (R)" data-hotkey="R"><i data-lucide="square"></i></button>
+                    <button class="tool-btn" data-tool="ellipse" title="Еліпс (O)" data-hotkey="O"><i data-lucide="circle"></i></button>
+                    <button class="tool-btn" data-tool="triangle" title="Трикутник" data-hotkey="Shift+T"><i data-lucide="triangle"></i></button>
+                    <button class="tool-btn" data-tool="star" title="Зірка" data-hotkey="Shift+S"><i data-lucide="star"></i></button>
+                    <button class="tool-btn" data-tool="pen" title="Векторне перо (P)" data-hotkey="P"><i data-lucide="pen-tool"></i></button>
+                    <button class="tool-btn" data-tool="text" title="Текст (T)" data-hotkey="T"><i data-lucide="type"></i></button>
+                    <button class="tool-btn" data-tool="image" title="Зображення (I)" id="tool-image" data-hotkey="I"><i data-lucide="image"></i></button>
                     <input type="file" id="image-upload" accept="image/*" style="display:none;">
                 </div>
             </div>
@@ -100,31 +139,61 @@
         </div>
 
         <!-- ПРОТОТИП ПЛЕЄР -->
-        <div id="prototype-player" class="prototype-player hidden">
-            <button class="close-player"><i data-lucide="x"></i> Закрити презентацію</button>
-            <div class="player-stage" id="player-stage"></div>
+        <div id="proto-player" class="prototype-player hidden" style="display:none;">
+            <button id="btn-close-proto" class="close-player"><i data-lucide="x"></i> Закрити презентацію</button>
+            <div class="player-stage" id="proto-player-inner"></div>
         </div>
+        
+        <!-- ПРИХОВАНІ INPUT ДЛЯ ФАЙЛІВ -->
+        <input type="file" id="image-upload" style="display:none" accept="image/*">
+        <input type="file" id="import-input" style="display:none" accept=".json">
         
         <!-- CONTEXT MENU (Right Click) -->
         <div id="context-menu" class="context-menu hidden">
-            <div class="cm-item" id="cm-bring-forward">На передній план <span class="cm-shortcut">]</span></div>
-            <div class="cm-item" id="cm-send-backward">На задній план <span class="cm-shortcut">[</span></div>
+            <div class="cm-item" data-action="forward">На передній план <span class="cm-shortcut">]</span></div>
+            <div class="cm-item" data-action="backward">На задній план <span class="cm-shortcut">[</span></div>
             <div class="cm-divider"></div>
-            <div class="cm-item" id="cm-group">Об'єднати в групу <span class="cm-shortcut">Ctrl+G</span></div>
-            <div class="cm-item" id="cm-ungroup">Розгрупувати <span class="cm-shortcut">Ctrl+Shift+G</span></div>
+            <div class="cm-item" data-action="group">Об'єднати в групу <span class="cm-shortcut">Ctrl+G</span></div>
+            <div class="cm-item" data-action="ungroup">Розгрупувати <span class="cm-shortcut">Ctrl+Shift+G</span></div>
             <div class="cm-divider"></div>
-            <div class="cm-item" id="cm-auto-layout">Включити Auto Layout <span class="cm-shortcut">Shift+A</span></div>
+            <div class="cm-item" data-action="copy">Копіювати <span class="cm-shortcut">Ctrl+C</span></div>
+            <div class="cm-item" data-action="paste">Вставити <span class="cm-shortcut">Ctrl+V</span></div>
+            <div class="cm-item" data-action="duplicate">Дублювати <span class="cm-shortcut">Ctrl+D</span></div>
             <div class="cm-divider"></div>
-            <div class="cm-item" id="cm-copy">Копіювати <span class="cm-shortcut">Ctrl+C</span></div>
-            <div class="cm-item" id="cm-paste">Вставити <span class="cm-shortcut">Ctrl+V</span></div>
-            <div class="cm-item" id="cm-duplicate">Дублювати <span class="cm-shortcut">Ctrl+D</span></div>
-            <div class="cm-divider"></div>
-            <div class="cm-item" id="cm-lock">Заблокувати/Розбл. <span class="cm-shortcut">Ctrl+L</span></div>
-            <div class="cm-item" id="cm-hide">Показати/Приховати <span class="cm-shortcut">Ctrl+H</span></div>
-            <div class="cm-item cm-danger" id="cm-delete">Видалити <span class="cm-shortcut">Del</span></div>
+            <div class="cm-item" data-action="lock">Заблокувати/Розбл. <span class="cm-shortcut">Ctrl+L</span></div>
+            <div class="cm-item" data-action="hide">Показати/Приховати <span class="cm-shortcut">Ctrl+H</span></div>
+            <div class="cm-item cm-danger" data-action="delete">Видалити <span class="cm-shortcut">Del</span></div>
         </div>
     </div>
     
+    <script src="js/shapes/BaseShape.js"></script>
+    <script src="js/shapes/RectShape.js"></script>
+    <script src="js/shapes/EllipseShape.js"></script>
+    <script src="js/shapes/TextShape.js"></script>
+    <script src="js/shapes/PathShape.js"></script>
+    <script src="js/shapes/ImageShape.js"></script>
+    <script src="js/shapes/FrameShape.js"></script>
+    <script src="js/shapes/TriangleShape.js"></script>
+    <script src="js/shapes/StarShape.js"></script>
+    <script src="js/shapes/GroupShape.js"></script>
+
+    <!-- Core Managers -->
+    <script src="js/core/History.js"></script>
+    <script src="js/core/Clipboard.js"></script>
+    <script src="js/core/Viewport.js"></script>
+    <script src="js/core/Selection.js"></script>
+    <script src="js/core/AutoLayout.js"></script>
+    <script src="js/core/Prototype.js"></script>
+
+    <!-- UI Managers -->
+    <script src="js/ui/ColorPicker.js"></script>
+    <script src="js/ui/Toolbar.js"></script>
+    <script src="js/ui/LayersPanel.js"></script>
+    <script src="js/ui/PropertiesPanel.js"></script>
+    <script src="js/ui/ContextMenu.js"></script>
+    <script src="js/ui/ExportManager.js"></script>
+    <script src="js/ui/PrototypePlayer.js"></script>
+
     <script src="js/engine.js"></script>
     <script src="js/app.js"></script>
     <script>
