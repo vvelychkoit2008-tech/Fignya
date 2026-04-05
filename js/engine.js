@@ -419,9 +419,12 @@ class FihnyaEngine {
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); }
 
             if (e.key === 'Escape' || e.key === 'Enter') {
-                if (this.isDrawingPen) {
+                if (this.isDrawingPen && this.tempShape) {
                     e.preventDefault();
                     this.isDrawingPen = false;
+                    this.tempShape.updateBounds();
+                    this.updateUI();
+                    this.fireSelectionChange();
                     this.tempShape = null;
                     this.saveState();
                 }
@@ -583,6 +586,12 @@ class FihnyaEngine {
             return;
         }
 
+        if (this.isDrawingPen && this.activeTool !== 'pen') {
+            this.isDrawingPen = false;
+            if (this.tempShape) this.tempShape.updateBounds();
+            this.tempShape = null;
+        }
+
         const pt = this.viewport.getCanvasPoint(e);
         
         if (this.isRubberbanding) {
@@ -667,11 +676,29 @@ class FihnyaEngine {
             const shape = this.getShapeById(this.selectedIds[0]);
             const dx = pt.x - this.dragStart.x; const dy = pt.y - this.dragStart.y;
             this.dragStart = pt;
+            
+            const oldW = shape.width; const oldH = shape.height;
+            const oldX = shape.x; const oldY = shape.y;
+
             if (this.activeHandle.includes('r')) shape.width += dx;
             if (this.activeHandle.includes('l')) { shape.width -= dx; shape.x += dx; }
             if (this.activeHandle.includes('b')) shape.height += dy;
             if (this.activeHandle.includes('t')) { shape.height -= dy; shape.y += dy; }
             shape.width = Math.max(1, shape.width); shape.height = Math.max(1, shape.height);
+
+            // Scale children if it's a group
+            if (shape.type === 'group' || shape.type === 'frame') {
+                const scaleX = shape.width / oldW;
+                const scaleY = shape.height / oldH;
+                this.shapes.filter(s => s.groupId === shape.id).forEach(c => {
+                    c.x = shape.x + (c.x - oldX) * scaleX;
+                    c.y = shape.y + (c.y - oldY) * scaleY;
+                    c.width *= scaleX;
+                    c.height *= scaleY;
+                    this.updateShapeNode(c);
+                });
+            }
+
             this.updateShapeNode(shape);
             if (shape.isAutoLayout) this.autoLayout.apply(shape);
             this.updateUI();
@@ -702,7 +729,7 @@ class FihnyaEngine {
             this.isDrawingLink = false; this.tempShape = null; this.prototype.render(); this.saveState();
         } else if (this.isDrawing) {
             this.isDrawing = false;
-            if (this.tempShape.width < 5 && this.tempShape.height < 5 && this.tempShape.type !== 'text') this.deleteShapeObj(this.tempShape.id);
+            if (this.tempShape.width < 5 && this.tempShape.height < 5 && this.tempShape.type !== 'text' && this.tempShape.type !== 'path') this.deleteShapeObj(this.tempShape.id);
             else {
                 const tCx = this.tempShape.x + this.tempShape.width/2; const tCy = this.tempShape.y + this.tempShape.height/2;
                 const container = [...this.shapes].reverse().find(s => (s.type === 'frame' || s.type === 'group') && s.id !== this.tempShape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
@@ -725,7 +752,28 @@ class FihnyaEngine {
                 this.callbacks.onSceneChange(); this.saveState();
             }
             this.tempShape = null;
-        } else if (this.isDragging || this.isResizing) { this.callbacks.onSceneChange(); this.saveState(); }
+        } else if (this.isDragging) {
+            // Drag-to-nest logic
+            this.selectedIds.forEach(id => {
+                const shape = this.getShapeById(id);
+                if (!shape || shape.type === 'group' || shape.type === 'frame') return;
+                
+                const tCx = shape.x + shape.width/2; const tCy = shape.y + shape.height/2;
+                const container = [...this.shapes].reverse().find(s => s.type === 'frame' && s.id !== shape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
+                
+                if (container) {
+                    shape.groupId = container.id;
+                    if (container.isAutoLayout) this.autoLayout.apply(container);
+                } else if (shape.groupId) {
+                    const oldParent = this.getShapeById(shape.groupId);
+                    delete shape.groupId;
+                    if (oldParent && oldParent.isAutoLayout) this.autoLayout.apply(oldParent);
+                }
+            });
+            this.callbacks.onSceneChange(); this.saveState();
+        } else if (this.isResizing) {
+            this.callbacks.onSceneChange(); this.saveState();
+        }
         this.isDragging = false; this.isResizing = false; this.activeHandle = null; this.selection.smartGuides = [];
         this.updateUI();
     }

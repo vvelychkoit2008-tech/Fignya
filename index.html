@@ -9,6 +9,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
+    <script>
+        // Apply theme immediately to prevent FOUC
+        (function() {
+            const theme = localStorage.getItem('fihnya-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.add('light-mode');
+            }
+        })();
+    </script>
 </head>
 <body>
     <div class="app-container">
@@ -55,6 +64,9 @@
                     <button class="mode-btn" data-mode="prototype">Prototype</button>
                     <button class="mode-btn" data-mode="inspect">Inspect</button>
                 </div>
+                <button class="action-btn" id="btn-theme-toggle" title="Змінити тему">
+                    <i data-lucide="moon"></i>
+                </button>
                 <button class="action-btn" id="btn-play" title="Запустити прототип" style="display:none;">
                     <i data-lucide="play"></i>
                 </button>
@@ -193,6 +205,7 @@
     <script src="js/ui/ContextMenu.js"></script>
     <script src="js/ui/ExportManager.js"></script>
     <script src="js/ui/PrototypePlayer.js"></script>
+    <script src="js/ui/ThemeManager.js"></script>
 
     <script src="js/engine.js"></script>
     <script src="js/app.js"></script>

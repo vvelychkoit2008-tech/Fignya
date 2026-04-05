@@ -229,7 +229,10 @@ class PropertiesPanelManager {
         input.addEventListener('blur', () => this.activeInput = null);
         input.addEventListener('input', (e) => {
             let val = e.target.value;
-            if (type === 'number') val = parseFloat(val);
+            if (type === 'number') {
+                val = parseFloat(val);
+                if (key === 'points' && val < 3) val = 3;
+            }
             this.engine.updateSelectedProperty(key, val);
             if (this.onUpdate) this.onUpdate();
         });

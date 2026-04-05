@@ -6,7 +6,7 @@ class AutoLayoutManager {
     triggerPass(child) {
         const frames = this.engine.shapes.filter(s => s.type === 'frame' && s.isAutoLayout);
         frames.forEach(f => {
-            if (child.x >= f.x - 50 && child.y >= f.y - 50 && child.x <= f.x+f.width+50 && child.y <= f.y+f.height+50) {
+            if (child.id !== f.id && child.x >= f.x - 20 && child.y >= f.y - 20 && child.x <= f.x+f.width+20 && child.y <= f.y+f.height+20) {
                 this.apply(f);
             }
         });
@@ -14,39 +14,39 @@ class AutoLayoutManager {
 
     apply(frame) {
         if (!frame.isAutoLayout) return;
-        const children = this.engine.shapes.filter(s => s.groupId === frame.id && !s.isHidden && s.type !== 'group');
+        // Include both basic shapes AND groups/frames as children
+        const children = this.engine.shapes.filter(s => s.groupId === frame.id && !s.isHidden);
         if (children.length === 0) return;
         
-        let cx = frame.x + frame.padding;
-        let cy = frame.y + frame.padding;
+        const padding = frame.padding || 0;
+        const gap = frame.gap || 0;
+        let cx = frame.x + padding;
+        let cy = frame.y + padding;
         let maxW = 0, maxH = 0;
 
-        // Dynamic Sorting for Reordering (Figma style)
+        // Sort children by position before applying layout
         if (frame.layoutDirection === 'vertical') children.sort((a,b) => a.y - b.y);
         else children.sort((a,b) => a.x - b.x);
 
         children.forEach(c => {
             c.x = cx; c.y = cy;
             if (frame.layoutDirection === 'vertical') {
-                cy += c.height + frame.gap;
+                cy += c.height + gap;
                 if (c.width > maxW) maxW = c.width;
             } else {
-                cx += c.width + frame.gap;
+                cx += c.width + gap;
                 if (c.height > maxH) maxH = c.height;
             }
             this.engine.updateShapeNode(c);
         });
         
-        const targetW = frame.layoutDirection === 'vertical' ? maxW + frame.padding*2 : cx - frame.x - frame.gap + frame.padding;
-        const targetH = frame.layoutDirection === 'vertical' ? cy - frame.y - frame.gap + frame.padding : maxH + frame.padding*2;
+        const targetW = frame.layoutDirection === 'vertical' ? maxW + padding*2 : cx - frame.x - gap + padding;
+        const targetH = frame.layoutDirection === 'vertical' ? cy - frame.y - gap + padding : maxH + padding*2;
         
-        // Size constraints
-        frame.width = Math.max(frame.width, targetW);
-        frame.height = Math.max(frame.height, targetH);
+        // Auto-sizing Frame
+        frame.width = Math.max(20, targetW);
+        frame.height = Math.max(20, targetH);
         
-        if (frame.layoutDirection === 'vertical') frame.height = targetH;
-        else frame.width = targetW;
-
         this.engine.updateShapeNode(frame);
     }
 }

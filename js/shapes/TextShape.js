@@ -17,13 +17,15 @@ class TextShape extends BaseShape {
     }
 
     update() {
-        super.update();
         if (!this.node) return;
+        super.update();
         this.node.setAttribute('x', this.x);
         this.node.setAttribute('y', this.y);
         this.node.textContent = this.text;
         this.node.setAttribute('font-size', (this.fontSize || 16) + 'px');
         this.node.setAttribute('font-weight', this.fontWeight || 400);
         this.node.setAttribute('font-family', this.fontFamily || 'Inter, sans-serif');
+        this.node.setAttribute('pointer-events', 'visiblePainted');
+        this.node.style.cursor = 'text';
     }
 }

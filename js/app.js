@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const contextMenu = new ContextMenuManager(engine);
     const exportManager = new ExportManager(engine);
     const prototypePlayer = new PrototypePlayer(engine);
+    const themeManager = new ThemeManager();
 
     // 3. Connect Engine Callbacks to UI
     engine.callbacks.onSelectionChange = () => {
