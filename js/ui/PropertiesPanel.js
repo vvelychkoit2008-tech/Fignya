@@ -104,15 +104,24 @@ class PropertiesPanelManager {
         }
 
         this.addSectionTitle('Вигляд');
-        const opacityRow = this.addRow();
-        this.addSlider('Прозорість', 'opacity', shape.opacity !== undefined ? shape.opacity : 1, 0, 1, 0.01, opacityRow);
-        this.addInput('Поворот', 'rotation', shape.rotation || 0, 'number', opacityRow, '°');
+        const appearanceRow = this.addRow();
+        this.addSlider('Прозорість', 'opacity', shape.opacity !== undefined ? shape.opacity : 1, 0, 1, 0.01, appearanceRow, 'sun');
+        this.addInput('Кут повороту', 'rotation', shape.rotation || 0, 'number', appearanceRow, 'rotate-cw');
 
         if (shape.type !== 'group' && shape.type !== 'image') {
             this.addSectionTitle('Стиль');
-            if (shape.type !== 'path') this.addColorInput('Заливка', 'fill', shape.fill);
-            this.addColorInput('Контур', 'stroke', shape.stroke);
-            this.addInput('Товщина', 'strokeWidth', shape.strokeWidth, 'number', null, 'px');
+            const styleContainer = document.createElement('div');
+            styleContainer.className = 'style-section-container';
+            styleContainer.style.display = 'flex';
+            styleContainer.style.flexDirection = 'column';
+            styleContainer.style.gap = '12px';
+            this.propertiesContent.appendChild(styleContainer);
+
+            if (shape.type !== 'path') {
+                this.addColorInput('Заливка', 'fill', shape.fill, styleContainer, 'paint-bucket');
+            }
+            this.addColorInput('Контур', 'stroke', shape.stroke, styleContainer, 'pencil');
+            this.addInput('Товщина', 'strokeWidth', shape.strokeWidth, 'number', styleContainer, 'maximize-2');
         }
 
         if (shape.type === 'text') {
@@ -217,20 +226,60 @@ class PropertiesPanelManager {
         return row;
     }
 
-    addInput(label, key, value, type, parent, iconText) {
+    addInput(label, key, value, type, parent, iconName) {
         const group = document.createElement('div');
         group.className = 'prop-group';
         const id = `prop-${key}`;
         group.title = label;
-        group.innerHTML = `<div class="prop-icon">${iconText || label[0].toUpperCase()}</div><input type="${type}" id="${id}" name="${id}" class="prop-input" value="${value}">`;
-        const input = group.querySelector('input');
         
+        let iconHtml = (iconName && iconName.length > 1) ? `<i data-lucide="${iconName}" style="width:12px; height:12px;"></i>` : (iconName || label[0].toUpperCase());
+        group.innerHTML = `<div class="prop-icon" id="${id}-icon">${iconHtml}</div><input type="${type}" id="${id}" name="${id}" class="prop-input" value="${value}">`;
+        
+        const input = group.querySelector('input');
+        const icon = group.querySelector('.prop-icon');
+        
+        // Scrubbing Logic
+        if (type === 'number') {
+            let startX, startVal;
+            const onMouseMove = (e) => {
+                const dx = e.clientX - startX;
+                const sensitivity = e.shiftKey ? 10 : 1;
+                let newVal = startVal + Math.round(dx / 2) * sensitivity;
+                if (key === 'points' && newVal < 3) newVal = 3;
+                if (key === 'strokeWidth' && newVal < 0) newVal = 0;
+                if (key === 'cornerRadius' && newVal < 0) newVal = 0;
+                if (key === 'rotation') newVal = ((startVal + Math.round(dx / 2)) % 360 + 360) % 360;
+                if (key === 'opacity') newVal = Math.max(0, Math.min(1, startVal + (dx / 200)));
+                
+                input.value = type === 'number' && key !== 'opacity' ? Math.round(newVal) : newVal.toFixed(2);
+                this.engine.updateSelectedProperty(key, newVal);
+                if (this.onUpdate) this.onUpdate();
+            };
+            const onMouseUp = () => {
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+                document.body.style.cursor = 'default';
+                this.engine.saveState();
+            };
+            icon.addEventListener('mousedown', (e) => {
+                startX = e.clientX;
+                startVal = parseFloat(input.value) || 0;
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+                document.body.style.cursor = 'ew-resize';
+            });
+        }
+
         input.addEventListener('focus', () => this.activeInput = input);
-        input.addEventListener('blur', () => this.activeInput = null);
+        input.addEventListener('blur', () => {
+            this.activeInput = null;
+            this.engine.saveState();
+        });
         input.addEventListener('input', (e) => {
             let val = e.target.value;
             if (type === 'number') {
                 val = parseFloat(val);
+                if (isNaN(val)) return;
                 if (key === 'points' && val < 3) val = 3;
             }
             this.engine.updateSelectedProperty(key, val);
@@ -239,29 +288,33 @@ class PropertiesPanelManager {
 
         this.inputs[key] = input;
         (parent || this.propertiesContent).appendChild(group);
+        lucide.createIcons({root: group});
         return group;
     }
 
-    addColorInput(label, key, value) {
+    addColorInput(label, key, value, parent, iconName) {
         const group = document.createElement('div');
         group.className = 'prop-group color-prop-group';
         const id = `prop-${key}`;
         const hexValue = (value && value.startsWith('#')) ? value.toLowerCase() : '#000000';
         
         const swatches = ['#ffffff', '#000000', '#ff3b30', '#34c759', '#0a84ff', '#ffd60a'];
-        const swatchesHtml = swatches.map(c => `<div class="color-swatch" style="background:${c}" data-color="${c}"></div>`).join('');
+        const swatchesHtml = swatches.map(c => `<div class="color-swatch ${hexValue === c.toLowerCase() ? 'active' : ''}" style="background:${c}" data-color="${c}"></div>`).join('');
+        
+        const iconHtml = iconName ? `<i data-lucide="${iconName}" style="width:12px; height:12px;"></i>` : (label[0].toUpperCase());
 
         group.classList.add(`color-prop-group-${key}`);
         group.innerHTML = `
             <div class="prop-icon-wrapper">
-                <div class="prop-icon" title="${label}">${label[0].toUpperCase()}</div>
+                <div class="prop-icon" title="${label}">${iconHtml}</div>
+                <div class="prop-label-text">${label}</div>
             </div>
             <div class="prop-color-container">
                 <div class="prop-color">
                     <div class="color-preview" style="background:${value}"></div>
                     <input type="text" id="${id}-text" name="${id}-text" class="prop-input" value="${value}" style="flex:1" autocomplete="off">
                 </div>
-                <div class="color-swatches">${swatchesHtml}<div class="color-swatch transparent-swatch" data-color="transparent" title="Прозорий"></div></div>
+                <div class="color-swatches">${swatchesHtml}<div class="color-swatch transparent-swatch ${value === 'transparent' || value === 'none' ? 'active' : ''}" data-color="transparent" title="Прозорий"></div></div>
             </div>`;
             
         const textInput = group.querySelector('input[type="text"]');
@@ -271,6 +324,11 @@ class PropertiesPanelManager {
         const update = (val) => {
             this.engine.updateSelectedProperty(key, val);
             preview.style.background = val;
+            
+            // Update active swatch
+            const allSwatches = swatchContainer.querySelectorAll('.color-swatch');
+            allSwatches.forEach(s => s.classList.toggle('active', s.dataset.color.toLowerCase() === (val || '').toLowerCase()));
+            
             if (this.onUpdate) this.onUpdate();
         };
 
@@ -280,7 +338,10 @@ class PropertiesPanelManager {
         });
 
         textInput.addEventListener('focus', () => this.activeInput = textInput);
-        textInput.addEventListener('blur', () => this.activeInput = null);
+        textInput.addEventListener('blur', () => {
+            this.activeInput = null;
+            this.engine.saveState();
+        });
         textInput.addEventListener('input', (e) => {
             const val = e.target.value;
             update(val);
@@ -291,11 +352,13 @@ class PropertiesPanelManager {
                 const val = e.target.dataset.color;
                 textInput.value = val;
                 update(val);
+                this.engine.saveState();
             }
         });
 
         this.inputs[key] = textInput; 
-        this.propertiesContent.appendChild(group);
+        (parent || this.propertiesContent).appendChild(group);
+        lucide.createIcons({root: group});
     }
 
     addSelect(label, key, value, options, customCallback) {
@@ -334,14 +397,15 @@ class PropertiesPanelManager {
         this.propertiesContent.appendChild(group);
     }
 
-    addSlider(label, key, value, min, max, step, parent) {
+    addSlider(label, key, value, min, max, step, parent, iconName) {
         const group = document.createElement('div');
         group.className = 'prop-group prop-slider-group';
         group.title = label;
         const id = `prop-${key}`;
         const percent = Math.round(value * 100);
+        const iconHtml = iconName ? `<i data-lucide="${iconName}" style="width:12px; height:12px;"></i>` : `${percent}%`;
         group.innerHTML = `
-            <div class="prop-icon">${percent}%</div>
+            <div class="prop-icon">${iconHtml}</div>
             <input type="range" id="${id}" name="${id}" class="prop-slider" 
                    min="${min}" max="${max}" step="${step}" value="${value}">`;
         const slider = group.querySelector('input[type="range"]');
@@ -356,6 +420,7 @@ class PropertiesPanelManager {
 
         this.inputs[key] = slider;
         (parent || this.propertiesContent).appendChild(group);
+        lucide.createIcons({root: group});
         return group;
     }
 }

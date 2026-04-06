@@ -180,6 +180,7 @@ class ToolbarManager {
         if (shape.type === 'rectangle' || shape.type === 'frame') {
             geoGroup.innerHTML += `
                 <i data-lucide="corner-up-right" style="width:12px;opacity:0.6" title="Радіус кутів"></i>
+                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Радіус</span>
                 <input type="number" class="ctx-input" value="${shape.cornerRadius || 0}" data-key="cornerRadius">
             `;
         }
@@ -187,8 +188,9 @@ class ToolbarManager {
         if (shape.type === 'text') {
             geoGroup.innerHTML += `
                 <i data-lucide="type" style="width:12px;opacity:0.6" title="Розмір тексту"></i>
+                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Текст</span>
                 <input type="number" class="ctx-input" value="${shape.fontSize || 16}" data-key="fontSize">
-                <select class="ctx-select" data-key="fontWeight">
+                <select class="ctx-input" data-key="fontWeight" style="padding:2px; height:22px; width:70px; margin-left:4px;">
                     <option value="400" ${shape.fontWeight == 400 ? 'selected' : ''}>Regular</option>
                     <option value="600" ${shape.fontWeight == 600 ? 'selected' : ''}>Bold</option>
                 </select>
@@ -198,6 +200,7 @@ class ToolbarManager {
         if (shape.type === 'star') {
             geoGroup.innerHTML += `
                 <i data-lucide="star" style="width:12px;opacity:0.6" title="Кількість променів"></i>
+                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Промені</span>
                 <input type="number" class="ctx-input" value="${shape.points || 5}" data-key="points" min="3" max="20">
             `;
         }
@@ -216,6 +219,7 @@ class ToolbarManager {
         if (shape.type !== 'image' && shape.type !== 'group' && shape.type !== 'path') {
              styleGroup.innerHTML += `
                 <i data-lucide="move-horizontal" style="width:12px;opacity:0.6" title="Товщина контуру"></i>
+                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Контур</span>
                 <input type="number" class="ctx-input" value="${shape.strokeWidth || 0}" data-key="strokeWidth" min="0">
             `;
         }

@@ -68,20 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // 4. Global UI Listeners
-    document.getElementById('btn-export-png').onclick = () => exportManager.exportToImage('png');
-    document.getElementById('btn-export-svg').onclick = () => exportManager.exportToImage('svg');
-    document.getElementById('btn-export-json').onclick = () => exportManager.exportJSON();
-    document.getElementById('btn-import-json').onclick = () => document.getElementById('import-input').click();
-    
-    document.getElementById('import-input').onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => engine.loadJSON(ev.target.result);
-            reader.readAsText(file);
-        }
-    };
+    // 4. Global UI Listeners (Export bindings managed in Section 5)
 
     document.getElementById('btn-play').onclick = () => prototypePlayer.start();
 

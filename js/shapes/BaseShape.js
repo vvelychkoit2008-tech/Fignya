@@ -46,6 +46,12 @@ class BaseShape {
         } else {
             this.node.removeAttribute('transform');
         }
+        // Clip Path
+        if (this.clipPath) {
+            this.node.setAttribute('clip-path', this.clipPath);
+        } else {
+            this.node.removeAttribute('clip-path');
+        }
     }
 
     getExportData() {

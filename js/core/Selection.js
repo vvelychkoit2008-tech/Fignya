@@ -39,6 +39,10 @@ class SelectionManager {
         bbox.style.width = shape.width + 'px';
         bbox.style.height = shape.height + 'px';
         
+        if (shape.rotation) {
+            bbox.style.transform = `rotate(${shape.rotation}deg)`;
+        }
+        
         if (isGroup || shape.type === 'frame') {
             const label = document.createElement('div');
             label.className = 'frame-label';
@@ -46,7 +50,7 @@ class SelectionManager {
             bbox.appendChild(label);
         }
 
-        if (!isMulti && shape.type !== 'virtual' && shape.type !== 'group' && !this.engine.isDrawing) {
+        if (!isMulti && shape.type !== 'virtual' && shape.type !== 'group' && this.engine.interaction.state !== 'drawing') {
             const handles = ['tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r'];
             handles.forEach(h => {
                 const handle = document.createElement('div');
@@ -54,6 +58,12 @@ class SelectionManager {
                 handle.dataset.dir = h;
                 bbox.appendChild(handle);
             });
+
+            // Rotation handle
+            const rotHandle = document.createElement('div');
+            rotHandle.className = 'handle rot';
+            rotHandle.dataset.dir = 'rot';
+            bbox.appendChild(rotHandle);
         }
         this.ui.appendChild(bbox);
     }

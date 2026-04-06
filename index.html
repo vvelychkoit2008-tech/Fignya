@@ -28,7 +28,7 @@
                 <div class="file-name">Без назви</div>
                 <div class="header-divider"></div>
                 <div class="default-styles" id="default-styles">
-                    <div class="header-actions">
+                <div class="header-actions">
                         <button class="header-action-btn" id="btn-undo" title="Відмінити (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
                         <button class="header-action-btn" id="btn-redo" title="Повторити (Ctrl+Y)"><i data-lucide="redo-2"></i></button>
                         <div class="header-dividermini"></div>
@@ -41,10 +41,11 @@
                     <!-- Contextual Toolbar -->
                     <div id="contextual-toolbar" class="hidden"></div>
                     <div class="header-divider"></div>
-                    <div class="style-item-wrapper">
-                        <div class="style-preview" id="preview-default-fill" title="Колір заливки за замовчуванням" style="background:#D9D9D9"></div>
-                        <div class="style-preview" id="preview-default-stroke" title="Колір контуру за замовчуванням" style="background:#000000"></div>
-                        <div class="style-input" title="Товщина контуру">
+                    <div class="style-item-wrapper" style="gap: 8px; display: flex; align-items: center;">
+                        <div class="style-preview" id="preview-default-fill" title="Колір заливки за замовчуванням (Default Fill)" style="background:#D9D9D9"></div>
+                        <div class="style-preview" id="preview-default-stroke" title="Колір контуру за замовчуванням (Default Stroke)" style="background:#000000"></div>
+                        <div class="style-input" title="Товщина контуру (Default Stroke Width)">
+                            <i data-lucide="maximize-2" style="width:12px;opacity:0.6;margin-right:4px;"></i>
                             <input type="number" id="input-default-stroke-width" value="1" min="0" max="100">
                         </div>
                     </div>
@@ -67,19 +68,20 @@
                 <button class="action-btn" id="btn-theme-toggle" title="Змінити тему">
                     <i data-lucide="moon"></i>
                 </button>
-                <button class="action-btn" id="btn-play" title="Запустити прототип" style="display:none;">
-                    <i data-lucide="play"></i>
+                <button class="action-btn header-accent" id="btn-play" title="Запустити прототип" style="display:none;">
+                    <i data-lucide="play"></i> <span>Play</span>
                 </button>
-                <button class="action-btn" id="btn-export-png" title="Експорт PNG">
+                <button class="action-btn header-export" id="btn-export-png" title="Експорт PNG">
                     <i data-lucide="image"></i>
                 </button>
-                <button class="action-btn" id="btn-export-svg" title="Експорт SVG">
+                <button class="action-btn header-export" id="btn-export-svg" title="Експорт SVG">
                     <i data-lucide="file-code"></i>
                 </button>
-                <button class="action-btn" id="btn-export-json" title="Зберегти JSON">
+                <div class="header-divider"></div>
+                <button class="action-btn header-primary" id="btn-export-json" title="Зберегти JSON">
                     <i data-lucide="save"></i>
                 </button>
-                <button class="action-btn" id="btn-import-json" title="Завантажити JSON">
+                <button class="action-btn header-primary" id="btn-import-json" title="Відкрити проект JSON">
                     <i data-lucide="folder-open"></i>
                 </button>
             </div>
@@ -121,6 +123,7 @@
                     <button class="tool-btn" data-tool="ellipse" title="Еліпс (O)" data-hotkey="O"><i data-lucide="circle"></i></button>
                     <button class="tool-btn" data-tool="triangle" title="Трикутник" data-hotkey="Shift+T"><i data-lucide="triangle"></i></button>
                     <button class="tool-btn" data-tool="star" title="Зірка" data-hotkey="Shift+S"><i data-lucide="star"></i></button>
+                    <button class="tool-btn" data-tool="arrow" title="Стрілка" data-hotkey="Shift+A"><i data-lucide="arrow-right"></i></button>
                     <button class="tool-btn" data-tool="pen" title="Векторне перо (P)" data-hotkey="P"><i data-lucide="pen-tool"></i></button>
                     <button class="tool-btn" data-tool="text" title="Текст (T)" data-hotkey="T"><i data-lucide="type"></i></button>
                     <button class="tool-btn" data-tool="image" title="Зображення (I)" id="tool-image" data-hotkey="I"><i data-lucide="image"></i></button>
@@ -151,7 +154,7 @@
         </div>
 
         <!-- ПРОТОТИП ПЛЕЄР -->
-        <div id="proto-player" class="prototype-player hidden" style="display:none;">
+        <div id="proto-player" class="prototype-player hidden">
             <button id="btn-close-proto" class="close-player"><i data-lucide="x"></i> Закрити презентацію</button>
             <div class="player-stage" id="proto-player-inner"></div>
         </div>
@@ -186,6 +189,7 @@
     <script src="js/shapes/ImageShape.js"></script>
     <script src="js/shapes/FrameShape.js"></script>
     <script src="js/shapes/TriangleShape.js"></script>
+    <script src="js/shapes/ArrowShape.js"></script>
     <script src="js/shapes/StarShape.js"></script>
     <script src="js/shapes/GroupShape.js"></script>
 

@@ -4,26 +4,26 @@ class FihnyaEngine {
         this.ui = uiContainer;
         this.wrapper = wrapper;
         
-        // Internal State
+        // Data State
         this.shapes = []; 
         this.selectedIds = [];
         this.activeTool = 'select'; 
         this.mode = 'design'; 
         this.defaultStyle = { fill: '#D9D9D9', stroke: 'none', strokeWidth: 1 };
         
-        // Interaction State
-        this.isDragging = false;
-        this.isPanning = false;
-        this.isResizing = false;
-        this.isDrawing = false;
-        this.isRubberbanding = false;
-        this.isDrawingPen = false;
-        this.isDrawingLink = false;
-        this.lastMouse = { x: 0, y: 0 };
-        this.dragStart = { x: 0, y: 0 };
-        this.activeHandle = null;
-        this.tempShape = null;
-        this.tempLinkNode = null;
+        // Interaction System
+        this.interaction = {
+            state: 'idle', // 'idle', 'dragging', 'panning', 'resizing', 'drawing', 'rubberbanding', 'pen', 'link'
+            lastMouse: { x: 0, y: 0 },
+            dragStart: { x: 0, y: 0 },
+            activeHandle: null,
+            tempShape: null,
+            tempLinkNode: null,
+            rubberbandBox: null,
+            isSpaceDown: false,
+            didPan: false,
+            didFinishPen: false
+        };
 
         // Callbacks
         this.callbacks = {
@@ -31,10 +31,11 @@ class FihnyaEngine {
             onSceneChange: () => {},
             onPropertyChange: (shape, key, value) => {},
             onContextMenu: () => {},
-            onDoubleClickText: () => {}
+            onDoubleClickText: () => {},
+            onToolChange: () => {}
         };
 
-        // Initialize Managers
+        // UI Managers
         this.viewport = new ViewportManager(this, this.svg, this.ui, this.wrapper);
         this.history = new HistoryManager(this);
         this.clipboard = new ClipboardManager(this);
@@ -144,24 +145,27 @@ class FihnyaEngine {
         
         if (targetId) {
             targetIdx = this.shapes.findIndex(s => s.id === targetId);
-            const tShape = this.shapes[targetIdx];
-            if (position === 'inside') {
-                sourceShape.groupId = tShape.id;
-                const childrenCount = this.shapes.filter(s => s.groupId === tShape.id).length;
-                this.shapes.splice(targetIdx + 1 + childrenCount, 0, ...toMove);
+            if (targetIdx === -1) {
+                this.shapes.push(...toMove);
+                sourceShape.groupId = null;
             } else {
-                sourceShape.groupId = tShape.groupId || null;
-                const insertIdx = position === 'before' ? targetIdx + 1 : targetIdx;
-                this.shapes.splice(insertIdx, 0, ...toMove);
+                const tShape = this.shapes[targetIdx];
+                if (position === 'inside') {
+                    sourceShape.groupId = tShape.id;
+                    const childrenCount = this.shapes.filter(s => s.groupId === tShape.id).length;
+                    this.shapes.splice(targetIdx + 1 + childrenCount, 0, ...toMove);
+                } else {
+                    sourceShape.groupId = tShape.groupId || null;
+                    const insertIdx = position === 'before' ? targetIdx + 1 : targetIdx;
+                    this.shapes.splice(insertIdx, 0, ...toMove);
+                }
             }
         } else {
             sourceShape.groupId = null;
             this.shapes.push(...toMove);
         }
 
-        this.shapes.forEach(sh => {
-            if (sh.node) this.svg.appendChild(sh.node);
-        });
+        this.syncDOMOrder();
         
         if (sourceShape.groupId) {
             const parent = this.getShapeById(sourceShape.groupId);
@@ -176,6 +180,12 @@ class FihnyaEngine {
         this.saveState();
     }
 
+    syncDOMOrder() {
+        this.shapes.forEach(sh => {
+            if (sh.node) this.svg.appendChild(sh.node);
+        });
+    }
+
     // Shape Creation
     createShapeByType(params) {
         let shape;
@@ -183,6 +193,7 @@ class FihnyaEngine {
             case 'rectangle': shape = new RectShape(params); break;
             case 'ellipse': shape = new EllipseShape(params); break;
             case 'triangle': shape = new TriangleShape(params); break;
+            case 'arrow': shape = new ArrowShape(params); break;
             case 'star': shape = new StarShape(params); break;
             case 'text': shape = new TextShape(params); break;
             case 'path': shape = new PathShape(params); break;
@@ -195,11 +206,12 @@ class FihnyaEngine {
     }
 
     createShapeParams(type, x, y) {
+        const isFrame = type === 'frame';
         const params = { 
             id: this.generateId(), 
             type, x, y, 
             width: 0, height: 0, 
-            fill: this.defaultStyle.fill, 
+            fill: isFrame ? '#ffffff' : this.defaultStyle.fill, 
             stroke: this.defaultStyle.stroke, 
             strokeWidth: this.defaultStyle.strokeWidth 
         };
@@ -207,7 +219,33 @@ class FihnyaEngine {
     }
 
     renderShape(shape) { if (shape.render) shape.render(this.svg); }
-    updateShapeNode(shape) { if (shape.update) shape.update(); }
+    updateShapeNode(shape) { 
+        if (shape.type === 'frame') this.syncFrameClipPath(shape);
+        const isDragging = this.interaction.state === 'dragging' && this.selectedIds.includes(shape.id);
+        shape.clipPath = (shape.groupId && !isDragging) ? `url(#clip-${shape.groupId})` : null;
+        if (shape.update) shape.update(); 
+    }
+
+    syncFrameClipPath(frame) {
+        let defs = this.svg.querySelector('defs');
+        if (!defs) {
+            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            this.svg.prepend(defs);
+        }
+        let clip = defs.querySelector(`#clip-${frame.id}`);
+        if (!clip) {
+            clip = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+            clip.id = `clip-${frame.id}`;
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            clip.appendChild(rect);
+            defs.appendChild(clip);
+        }
+        const rect = clip.querySelector('rect');
+        rect.setAttribute('x', frame.x);
+        rect.setAttribute('y', frame.y);
+        rect.setAttribute('width', frame.width);
+        rect.setAttribute('height', frame.height);
+    }
 
     addImageShape(x, y, dataUrl, w=200, h=200) {
         const imgShape = this.createShapeParams('image', x, y);
@@ -368,20 +406,16 @@ class FihnyaEngine {
 
     // Interaction Handlers
     initEvents() {
-        const container = this.svg.parentElement.parentElement;
+        const container = this.wrapper;
         
         container.addEventListener('wheel', (e) => {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                const rect = container.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                const zoomFactor = 0.008; 
-                let newScale = this.viewport.targetTransform.scale * (1 - Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY)*zoomFactor, 0.5));
-                this.viewport.zoom(newScale, mouseX, mouseY);
-            } else {
-                this.viewport.pan(-e.deltaX, -e.deltaY);
-            }
+            e.preventDefault();
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const zoomFactor = 0.005; 
+            let newScale = this.viewport.targetTransform.scale * (1 - Math.sign(e.deltaY) * 0.1); 
+            this.viewport.zoom(newScale, mouseX, mouseY);
         }, { passive: false });
 
         container.addEventListener('pointerdown', this.onPointerDown.bind(this));
@@ -394,387 +428,576 @@ class FihnyaEngine {
         });
 
         container.addEventListener('contextmenu', (e) => {
+            if (this.interaction.didPan || this.interaction.didFinishPen) {
+                this.interaction.didPan = false;
+                this.interaction.didFinishPen = false;
+                e.preventDefault();
+                return;
+            }
+            if (this.activeTool === 'pen') {
+                e.preventDefault();
+                return;
+            }
             e.preventDefault();
             this.callbacks.onContextMenu(e);
         });
 
         document.addEventListener('keydown', (e) => {
-            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.isContentEditable) return;
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
 
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
-            if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); this.redo(); }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); this.copy(); }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); this.paste(); }
-            if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); this.duplicateSelected(); }
-            if (e.key === '[' || e.key === 'х' || e.key === 'Х') { e.preventDefault(); this.sendBackward(); }
-            if (e.key === ']' || e.key === 'ї' || e.key === 'Ї') { e.preventDefault(); this.bringForward(); }
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-                e.preventDefault();
-                this.selectedIds = this.shapes.filter(s => !s.isHidden && !s.isLocked && !s.groupId && s.type !== 'group').map(s => s.id);
-                this.updateUI();
-                this.fireSelectionChange();
+            // History & Clipboard
+            if ((e.ctrlKey || e.metaKey)) {
+                switch(e.key.toLowerCase()) {
+                    case 'z': e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); break;
+                    case 'y': e.preventDefault(); this.redo(); break;
+                    case 'c': e.preventDefault(); this.copy(); break;
+                    case 'v': e.preventDefault(); this.paste(); break;
+                    case 'd': e.preventDefault(); this.duplicateSelected(); break;
+                    case 'a': 
+                        e.preventDefault();
+                        this.selectedIds = this.shapes.filter(s => !s.isHidden && !s.isLocked && !s.groupId && s.type !== 'group').map(s => s.id);
+                        this.updateUI(); this.fireSelectionChange();
+                        break;
+                    case 'g':
+                        e.preventDefault(); e.shiftKey ? this.ungroupSelected() : this.groupSelected();
+                        break;
+                }
             }
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g' && !e.shiftKey) { e.preventDefault(); this.groupSelected(); }
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g' && e.shiftKey) { e.preventDefault(); this.ungroupSelected(); }
+
+            // Layer Stack
+            if (e.key === '[' || e.key === 'х') { e.preventDefault(); this.sendBackward(); }
+            if (e.key === ']' || e.key === 'ї') { e.preventDefault(); this.bringForward(); }
+            
+            // Deletion
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); }
 
+            // Pen Tool / Finish interactions
             if (e.key === 'Escape' || e.key === 'Enter') {
-                if (this.isDrawingPen && this.tempShape) {
+                if (this.interaction.state === 'pen') {
                     e.preventDefault();
-                    this.isDrawingPen = false;
-                    this.tempShape.updateBounds();
-                    this.updateUI();
-                    this.fireSelectionChange();
-                    this.tempShape = null;
-                    this.saveState();
-                }
-                if (e.key === 'Escape') {
+                    this.finalizePen();
+                } else if (e.key === 'Escape') {
                     this.setTool('select');
                     if (this.callbacks.onToolChange) this.callbacks.onToolChange('select');
                 }
             }
+
             if (e.key === 'Alt') { e.preventDefault(); document.body.classList.add('show-hotkeys'); }
 
-            // Tool hotkeys (layout independent)
-            const keyCodeMap = { 'KeyV': 'select', 'KeyR': 'rectangle', 'KeyO': 'ellipse', 'KeyC': 'ellipse', 'KeyP': 'pen', 'KeyT': 'text', 'KeyF': 'frame', 'KeyI': 'image' };
-            const toolMap = { 'v': 'select', 'r': 'rectangle', 'o': 'ellipse', 'c': 'ellipse', 'p': 'pen', 't': 'text', 'f': 'frame', 'i': 'image', 'м': 'select', 'к': 'rectangle', 'щ': 'ellipse', 'с': 'ellipse', 'з': 'pen', 'е': 'text', 'а': 'frame', 'ш': 'image' };
-            
-            let toolKey = keyCodeMap[e.code] || toolMap[e.key.toLowerCase()];
-            
-            // Special Shift + Key for shapes
-            if (e.shiftKey) {
-                if (e.code === 'KeyT') toolKey = 'triangle';
-                if (e.code === 'KeyS') toolKey = 'star';
-            }
+            // Tool Shortcuts
+            this.handleKeyboardTools(e);
 
-            if (toolKey && (!e.ctrlKey || e.shiftKey) && !e.metaKey && !e.altKey) {
+            // Pan shortcut (Space)
+            if (e.code === 'Space') {
                 e.preventDefault();
-                if (toolKey === 'image') {
-                    if (this.callbacks.onToolChange) this.callbacks.onToolChange('image');
-                } else {
-                    this.setTool(toolKey);
-                    if (this.callbacks.onToolChange) this.callbacks.onToolChange(toolKey);
-                }
-            }
-
-            if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-                e.preventDefault();
-                if (!this.isSpaceDown) {
-                    this.isSpaceDown = true;
+                if (!this.interaction.isSpaceDown) {
+                    this.interaction.isSpaceDown = true;
                     document.body.style.cursor = 'grab';
                 }
             }
 
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && this.selectedIds.length > 0) {
-                e.preventDefault();
-                const step = e.shiftKey ? 10 : 1;
-                let dx = 0, dy = 0;
-                if (e.key === 'ArrowUp') dy = -step; if (e.key === 'ArrowDown') dy = step;
-                if (e.key === 'ArrowLeft') dx = -step; if (e.key === 'ArrowRight') dx = step;
-
-                let moved = false;
-                this.selectedIds.forEach(id => {
-                    const sh = this.getShapeById(id);
-                    if (!sh || sh.isLocked || sh.isHidden) return;
-                    if (sh.type === 'group' || sh.type === 'frame') {
-                        this.shapes.filter(c => c.groupId === id).forEach(c => { if(!c.isLocked){c.x+=dx; c.y+=dy; this.updateShapeNode(c); moved=true; } });
-                    }
-                    sh.x += dx; sh.y += dy;
-                    this.updateShapeNode(sh);
-                    this.autoLayout.triggerPass(sh);
-                    moved = true;
-                });
-                if(moved) { this.updateUI(); this.saveState(); this.callbacks.onSceneChange(); }
+            // Nudge
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                this.handleNudge(e);
             }
         });
 
         document.addEventListener('keyup', (e) => {
             if (e.key === 'Alt') document.body.classList.remove('show-hotkeys');
             if (e.code === 'Space') {
-                this.isSpaceDown = false;
-                document.body.style.cursor = 'default';
+                this.interaction.isSpaceDown = false;
+                if (this.interaction.state !== 'panning') document.body.style.cursor = 'default';
             }
         });
     }
 
+    handleKeyboardTools(e) {
+        const keyCodeMap = { 'KeyV': 'select', 'KeyR': 'rectangle', 'KeyO': 'ellipse', 'KeyC': 'ellipse', 'KeyP': 'pen', 'KeyT': 'text', 'KeyF': 'frame', 'KeyI': 'image' };
+        const toolMap = { 'v': 'select', 'r': 'rectangle', 'o': 'ellipse', 'c': 'ellipse', 'p': 'pen', 't': 'text', 'f': 'frame', 'i': 'image', 'м': 'select', 'к': 'rectangle', 'щ': 'ellipse', 'с': 'ellipse', 'з': 'pen', 'е': 'text', 'а': 'frame', 'ш': 'image' };
+        
+        let toolKey = keyCodeMap[e.code] || toolMap[e.key.toLowerCase()];
+        
+        if (e.shiftKey) {
+            if (e.code === 'KeyT') toolKey = 'triangle';
+            if (e.code === 'KeyS') toolKey = 'star';
+            if (e.code === 'KeyA') toolKey = 'arrow';
+        }
+
+        if (toolKey && (!e.ctrlKey || e.shiftKey) && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            if (toolKey === 'image') {
+                if (this.callbacks.onToolChange) this.callbacks.onToolChange('image');
+            } else {
+                this.setTool(toolKey);
+                if (this.callbacks.onToolChange) this.callbacks.onToolChange(toolKey);
+            }
+        }
+    }
+
+    handleNudge(e) {
+        if (this.selectedIds.length === 0) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        let dx = 0, dy = 0;
+        if (e.key === 'ArrowUp') dy = -step; if (e.key === 'ArrowDown') dy = step;
+        if (e.key === 'ArrowLeft') dx = -step; if (e.key === 'ArrowRight') dx = step;
+
+        this.selectedIds.forEach(id => {
+            const sh = this.getShapeById(id);
+            if (!sh || sh.isLocked || sh.isHidden) return;
+            sh.x += dx; sh.y += dy;
+            this.updateShapeNode(sh);
+            this.autoLayout.triggerPass(sh);
+        });
+        
+        this.updateUI();
+        this.callbacks.onSceneChange();
+        this.saveState();
+    }
+
     onPointerDown(e) {
-        if (e.button === 1 || this.isSpaceDown) {
-            this.isPanning = true;
-            this.lastMouse = { x: e.clientX, y: e.clientY };
-            document.body.style.cursor = 'grabbing';
+        if (this.interaction.state === 'pen' && e.button === 2) {
+            e.preventDefault();
+            this.interaction.didFinishPen = true;
+            this.finalizePen();
             return;
         }
-        if (e.button === 2) return; 
-        
+
+        if (e.button === 1 || e.button === 2 || this.interaction.isSpaceDown) {
+            this.interaction.didPan = false;
+            this.startPanning(e);
+            return;
+        }
         const pt = this.viewport.getCanvasPoint(e);
-        this.lastMouse = { x: e.clientX, y: e.clientY };
-        this.dragStart = { ...pt };
+        this.interaction.lastMouse = { x: e.clientX, y: e.clientY };
+        this.interaction.dragStart = { ...pt };
 
         if (e.target.classList.contains('handle')) {
-            this.isResizing = true;
-            this.activeHandle = e.target.dataset.dir;
+            const dir = e.target.dataset.dir;
+            if (dir === 'rot') this.startRotating(e);
+            else this.startResizing(dir);
             return;
         }
 
         if (this.mode === 'prototype') {
-            const shape = this.getShapeFromNode(e.target);
-            if (shape && !shape.isLocked && !shape.isHidden) {
-                this.isDrawingLink = true;
-                this.tempShape = shape;
-                this.tempLinkNode = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                this.tempLinkNode.setAttribute('class', 'arrow-line');
-                this.ui.appendChild(this.tempLinkNode);
-            }
+            this.startLinking(e);
             return;
         }
 
         if (this.activeTool === 'select' || this.mode === 'inspect') {
-            const shape = this.getShapeFromNode(e.target);
-            if (shape && !shape.isLocked && !shape.isHidden) {
-                this.isDragging = true;
-                let targetId = shape.id;
-                if (!e.ctrlKey && !e.metaKey && !this.selectedIds.includes(shape.id)) {
-                    let current = shape;
-                    while (current.groupId) {
-                        const parent = this.getShapeById(current.groupId);
-                        if (!parent) break;
-                        current = parent;
-                    }
-                    targetId = current.id;
-                }
-                if (e.shiftKey) {
-                    if (this.selectedIds.includes(targetId)) this.selectedIds = this.selectedIds.filter(id => id !== targetId);
-                    else this.selectedIds.push(targetId);
-                } else if (!this.selectedIds.includes(targetId)) {
-                    this.selectedIds = [targetId];
-                }
-            } else {
-                if (!e.shiftKey) this.selectedIds = [];
-                if (this.mode !== 'inspect') {
-                    this.isRubberbanding = true;
-                    this.rubberbandBox = document.createElement('div');
-                    this.rubberbandBox.className = 'selection-box';
-                    this.ui.appendChild(this.rubberbandBox);
-                }
-            }
-            this.fireSelectionChange();
-            this.updateUI();
+            this.handleSelectPointerDown(e, pt);
         } else if (this.activeTool === 'pen') {
-            if (!this.isDrawingPen) {
-                this.isDrawingPen = true;
-                this.tempShape = this.createShapeParams('path', pt.x, pt.y);
-                this.shapes.push(this.tempShape);
-                this.renderShape(this.tempShape);
-            } else {
-                this.tempShape.d += ` L ${pt.x} ${pt.y}`;
-                this.updateShapeNode(this.tempShape);
-            }      
+            this.handlePenPointerDown(pt);
         } else if (this.activeTool !== 'image') {
-            this.isDrawing = true;
-            this.tempShape = this.createShapeParams(this.activeTool, pt.x, pt.y);
-            this.shapes.push(this.tempShape);
-            this.renderShape(this.tempShape);
+            this.startDrawing(pt);
         }
     }
 
     onPointerMove(e) {
-        if (this.isPanning) {
-            const dx = e.clientX - this.lastMouse.x;
-            const dy = e.clientY - this.lastMouse.y;
-            this.viewport.pan(dx, dy);
-            this.lastMouse = { x: e.clientX, y: e.clientY };
-            return;
-        }
-
-        if (this.isDrawingPen && this.activeTool !== 'pen') {
-            this.isDrawingPen = false;
-            if (this.tempShape) this.tempShape.updateBounds();
-            this.tempShape = null;
-        }
-
+        const state = this.interaction.state;
         const pt = this.viewport.getCanvasPoint(e);
-        
-        if (this.isRubberbanding) {
-            const w = pt.x - this.dragStart.x;
-            const h = pt.y - this.dragStart.y;
-            const rx = w < 0 ? pt.x : this.dragStart.x;
-            const ry = h < 0 ? pt.y : this.dragStart.y;
-            this.rubberbandBox.style.left = rx + 'px';
-            this.rubberbandBox.style.top = ry + 'px';
-            this.rubberbandBox.style.width = Math.abs(w) + 'px';
-            this.rubberbandBox.style.height = Math.abs(h) + 'px';
-        } else if (this.isDrawingPen && this.tempShape) {
-            this.tempShape.node.setAttribute('d', this.tempShape.d + ` L ${pt.x} ${pt.y}`);
-        } else if (this.isDrawingLink && this.tempShape) {
-            const sx = this.tempShape.x + this.tempShape.width/2;
-            const sy = this.tempShape.y + this.tempShape.height/2;
-            const path = `M ${sx} ${sy} Q ${(sx+pt.x)/2} ${(sy+pt.y)/2-50} ${pt.x} ${pt.y}`;
-            this.tempLinkNode.setAttribute('d', path);
-        } else if (this.isDrawing && this.tempShape) {
-            const w = pt.x - this.dragStart.x;
-            const h = pt.y - this.dragStart.y;
-            this.tempShape.x = w < 0 ? pt.x : this.dragStart.x;
-            this.tempShape.y = h < 0 ? pt.y : this.dragStart.y;
-            this.tempShape.width = Math.abs(w);
-            this.tempShape.height = Math.abs(h);
-            this.updateShapeNode(this.tempShape);
-        } else if (this.isDragging && this.selectedIds.length > 0 && this.mode !== 'inspect') {
-            const dx = pt.x - this.dragStart.x;
-            const dy = pt.y - this.dragStart.y;
-            this.dragStart = pt;
-            
-            let snapDx = dx; let snapDy = dy;
+
+        if (state === 'panning') {
+            this.viewport.pan(e.clientX - this.interaction.lastMouse.x, e.clientY - this.interaction.lastMouse.y);
+            this.interaction.lastMouse = { x: e.clientX, y: e.clientY };
+            this.interaction.didPan = true;
+        } else if (state === 'rubberbanding') {
+            this.updateRubberband(pt);
+        } else if (state === 'pen' && this.interaction.tempShape) {
+            let ptX = pt.x; let ptY = pt.y;
+            const threshold = 5 / this.viewport.transform.scale;
             this.selection.smartGuides = [];
-            
-            if (this.selectedIds.length === 1 && !e.altKey && !this.isResizing) {
-                const me = this.getShapeById(this.selectedIds[0]);
-                if (me && !me.groupId) {
-                    const threshold = 5 / this.viewport.transform.scale;
-                    let bX = null, bY = null, mX = Infinity, mY = Infinity;
-                    const mcX = me.x + dx + me.width/2; const mcY = me.y + dy + me.height/2;
-                    this.shapes.forEach(t => {
-                        if(t.id === me.id || t.type === 'group' || t.isHidden || t.groupId) return;
-                        const tcX = t.x + t.width/2; const tcY = t.y + t.height/2;
-                        if(Math.abs(mcX - tcX) < threshold && Math.abs(mcX - tcX) < mX) {
-                            mX = Math.abs(mcX - tcX); bX = tcX - me.width/2 - me.x;
-                            this.selection.smartGuides = this.selection.smartGuides.filter(g => g.type!=='v');
-                            this.selection.smartGuides.push({type:'v', pos:tcX, start:Math.min(me.y, t.y), end:Math.max(me.y+me.height, t.y+t.height)});
-                        }
-                        if(Math.abs(mcY - tcY) < threshold && Math.abs(mcY - tcY) < mY) {
-                            mY = Math.abs(mcY - tcY); bY = tcY - me.height/2 - me.y;
-                            this.selection.smartGuides = this.selection.smartGuides.filter(g => g.type!=='h');
-                            this.selection.smartGuides.push({type:'h', pos:tcY, start:Math.min(me.x, t.x), end:Math.max(me.x+me.width, t.x+t.width)});
-                        }
-                    });
-                    if(bX !== null) snapDx = bX; if(bY !== null) snapDy = bY;
-                }
-            }
-            
-            const moveShapeRecursive = (shapeId, dx, dy) => {
-                const shape = this.getShapeById(shapeId);
-                if (!shape) return;
-                if (shape.type === 'group' || shape.type === 'frame') {
-                    this.shapes.filter(c => c.groupId === shapeId).forEach(c => moveShapeRecursive(c.id, dx, dy));
-                }
-                shape.x += dx; shape.y += dy;
-                this.updateShapeNode(shape);
-            };
-
-            this.selectedIds.forEach(id => {
-                const shape = this.getShapeById(id);
-                if (!shape) return;
-                
-                moveShapeRecursive(id, snapDx, snapDy);
-                
-                if (shape.groupId) {
-                    const parent = this.getShapeById(shape.groupId);
-                    if (parent && parent.isAutoLayout) this.autoLayout.apply(parent);
-                } else this.autoLayout.triggerPass(shape);
-            });
-            this.updateUI();
-        } else if (this.isResizing && this.selectedIds.length === 1) {
-            const shape = this.getShapeById(this.selectedIds[0]);
-            const dx = pt.x - this.dragStart.x; const dy = pt.y - this.dragStart.y;
-            this.dragStart = pt;
-            
-            const oldW = shape.width; const oldH = shape.height;
-            const oldX = shape.x; const oldY = shape.y;
-
-            if (this.activeHandle.includes('r')) shape.width += dx;
-            if (this.activeHandle.includes('l')) { shape.width -= dx; shape.x += dx; }
-            if (this.activeHandle.includes('b')) shape.height += dy;
-            if (this.activeHandle.includes('t')) { shape.height -= dy; shape.y += dy; }
-            shape.width = Math.max(1, shape.width); shape.height = Math.max(1, shape.height);
-
-            // Scale children if it's a group
-            if (shape.type === 'group' || shape.type === 'frame') {
-                const scaleX = shape.width / oldW;
-                const scaleY = shape.height / oldH;
-                this.shapes.filter(s => s.groupId === shape.id).forEach(c => {
-                    c.x = shape.x + (c.x - oldX) * scaleX;
-                    c.y = shape.y + (c.y - oldY) * scaleY;
-                    c.width *= scaleX;
-                    c.height *= scaleY;
-                    this.updateShapeNode(c);
+            this.shapes.forEach(t => {
+                if (t.id === this.interaction.tempShape.id || t.isHidden || t.isLocked) return;
+                [t.x, t.x + t.width/2, t.x + t.width].forEach(xVal => {
+                    if (Math.abs(pt.x - xVal) < threshold) { ptX = xVal; this.selection.smartGuides.push({type:'v', pos:xVal, start:Math.min(pt.y, t.y), end:Math.max(pt.y, t.y+t.height)}); }
                 });
-            }
-
-            this.updateShapeNode(shape);
-            if (shape.isAutoLayout) this.autoLayout.apply(shape);
+                [t.y, t.y + t.height/2, t.y + t.height].forEach(yVal => {
+                    if (Math.abs(pt.y - yVal) < threshold) { ptY = yVal; this.selection.smartGuides.push({type:'h', pos:yVal, start:Math.min(pt.x, t.x), end:Math.max(pt.x, t.x+t.width)}); }
+                });
+            });
+            this.interaction.lastMouse = { x: ptX, y: ptY }; // Store snapped for next point
+            this.interaction.tempShape.node.setAttribute('d', this.interaction.tempShape.d + ` L ${ptX} ${ptY}`);
             this.updateUI();
+        } else if (state === 'link' && this.interaction.tempShape) {
+            this.updateTempLink(pt);
+        } else if (state === 'drawing' && this.interaction.tempShape) {
+            this.updateDrawing(pt);
+        } else if (state === 'dragging' && this.selectedIds.length > 0 && this.mode !== 'inspect') {
+            this.updateDragging(e, pt);
+        } else if (state === 'resizing' && this.selectedIds.length === 1) {
+            this.updateResizing(e, pt);
+        } else if (state === 'rotating' && this.selectedIds.length === 1) {
+            this.updateRotating(pt);
         }
     }
 
     onPointerUp(e) {
-        if (this.isPanning) { this.isPanning = false; document.body.style.cursor = 'default'; }
-        if (this.isRubberbanding) {
-            this.isRubberbanding = false;
-            const pt = this.viewport.getCanvasPoint(e);
-            let w = pt.x - this.dragStart.x; let h = pt.y - this.dragStart.y;
-            const rx = w < 0 ? pt.x : this.dragStart.x; const ry = h < 0 ? pt.y : this.dragStart.y;
-            w = Math.abs(w); h = Math.abs(h);
-            const newSel = [];
-            this.shapes.forEach(sh => {
-                if (sh.isHidden || sh.isLocked) return;
-                if (sh.x < rx+w && sh.x+sh.width > rx && sh.y < ry+h && sh.y+sh.height > ry && !sh.groupId && sh.type !== 'group') newSel.push(sh.id);
-                else if (sh.type === 'group' && sh.x < rx+w && sh.x+sh.width > rx && sh.y < ry+h && sh.y+sh.height > ry) newSel.push(sh.id);
+        const state = this.interaction.state;
+        const pt = this.viewport.getCanvasPoint(e);
+        if (state === 'panning') {
+            this.interaction.state = 'idle';
+            document.body.style.cursor = 'default';
+        } else if (state === 'rubberbanding') {
+            this.finishRubberband(e);
+        } else if (state === 'link') {
+            this.finishLinking(e);
+        } else if (state === 'drawing') {
+            this.finishDrawing(e);
+        } else if (state === 'dragging') {
+            this.finishDragging(pt);
+        } else if (state === 'resizing') {
+            this.finishResizing();
+        } else if (state === 'rotating') {
+            this.finishRotating();
+        }
+        
+        if (this.interaction.state !== 'pen') {
+            this.interaction.state = 'idle';
+        }
+        this.selection.smartGuides = [];
+        this.updateUI();
+    }
+
+    // Interaction Sub-handlers
+    startPanning(e) {
+        this.interaction.state = 'panning';
+        this.interaction.lastMouse = { x: e.clientX, y: e.clientY };
+        document.body.style.cursor = 'grabbing';
+    }
+
+    startResizing(dir) {
+        this.interaction.state = 'resizing';
+        this.interaction.activeHandle = dir;
+    }
+
+    startRotating(e) {
+        this.interaction.state = 'rotating';
+    }
+
+    startLinking(e) {
+        const shape = this.getShapeFromNode(e.target);
+        if (shape && !shape.isLocked && !shape.isHidden) {
+            this.interaction.state = 'link';
+            this.interaction.tempShape = shape;
+            this.interaction.tempLinkNode = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            this.interaction.tempLinkNode.setAttribute('class', 'arrow-line');
+            this.ui.appendChild(this.interaction.tempLinkNode);
+        }
+    }
+
+    handleSelectPointerDown(e, pt) {
+        const shape = this.getShapeFromNode(e.target);
+        if (shape && !shape.isLocked && !shape.isHidden) {
+            this.interaction.state = 'dragging';
+            let targetId = shape.id;
+            if (!e.ctrlKey && !e.metaKey && !this.selectedIds.includes(shape.id)) {
+                let current = shape;
+                while (current.groupId) {
+                    const parent = this.getShapeById(current.groupId);
+                    if (!parent) break;
+                    current = parent;
+                }
+                targetId = current.id;
+            }
+            if (e.shiftKey) {
+                if (this.selectedIds.includes(targetId)) this.selectedIds = this.selectedIds.filter(id => id !== targetId);
+                else this.selectedIds.push(targetId);
+            } else if (!this.selectedIds.includes(targetId)) {
+                this.selectedIds = [targetId];
+            }
+        } else {
+            if (!e.shiftKey) this.selectedIds = [];
+            if (this.mode !== 'inspect') {
+                this.interaction.state = 'rubberbanding';
+                this.interaction.rubberbandBox = document.createElement('div');
+                this.interaction.rubberbandBox.className = 'selection-box';
+                this.ui.appendChild(this.interaction.rubberbandBox);
+            }
+        }
+        this.fireSelectionChange();
+        this.updateUI();
+    }
+
+    handlePenPointerDown(pt) {
+        if (this.interaction.state !== 'pen') {
+            this.interaction.state = 'pen';
+            this.interaction.tempShape = this.createShapeParams('path', pt.x, pt.y);
+            this.interaction.tempShape.d = `M ${pt.x} ${pt.y}`;
+            this.shapes.push(this.interaction.tempShape);
+            this.renderShape(this.interaction.tempShape);
+        } else {
+            this.interaction.tempShape.d += ` L ${pt.x} ${pt.y}`;
+            this.updateShapeNode(this.interaction.tempShape);
+        }
+    }
+
+    startDrawing(pt) {
+        this.interaction.state = 'drawing';
+        this.interaction.tempShape = this.createShapeParams(this.activeTool, pt.x, pt.y);
+        this.shapes.push(this.interaction.tempShape);
+        this.renderShape(this.interaction.tempShape);
+    }
+
+    updateRubberband(pt) {
+        const w = pt.x - this.interaction.dragStart.x;
+        const h = pt.y - this.interaction.dragStart.y;
+        this.interaction.rubberbandBox.style.left = (w < 0 ? pt.x : this.interaction.dragStart.x) + 'px';
+        this.interaction.rubberbandBox.style.top = (h < 0 ? pt.y : this.interaction.dragStart.y) + 'px';
+        this.interaction.rubberbandBox.style.width = Math.abs(w) + 'px';
+        this.interaction.rubberbandBox.style.height = Math.abs(h) + 'px';
+    }
+
+    updateTempLink(pt) {
+        const sx = this.interaction.tempShape.x + this.interaction.tempShape.width/2;
+        const sy = this.interaction.tempShape.y + this.interaction.tempShape.height/2;
+        const path = `M ${sx} ${sy} Q ${(sx+pt.x)/2} ${(sy+pt.y)/2-50} ${pt.x} ${pt.y}`;
+        this.interaction.tempLinkNode.setAttribute('d', path);
+    }
+
+    updateDrawing(pt) {
+        let ptX = pt.x; let ptY = pt.y;
+        const threshold = 5 / this.viewport.transform.scale;
+        this.selection.smartGuides = [];
+
+        this.shapes.forEach(t => {
+            if (t.id === this.interaction.tempShape.id || t.isHidden || t.isLocked) return;
+            [t.x, t.x + t.width/2, t.x + t.width].forEach(xVal => {
+                if (Math.abs(pt.x - xVal) < threshold) { ptX = xVal; this.selection.smartGuides.push({type:'v', pos:xVal, start:Math.min(this.interaction.dragStart.y, t.y), end:Math.max(pt.y, t.y+t.height)}); }
             });
-            this.selectedIds = e.shiftKey ? [...new Set([...this.selectedIds, ...newSel])] : newSel;
-            if (this.rubberbandBox) this.rubberbandBox.remove();
-            this.fireSelectionChange(); this.updateUI();
-        } else if (this.isDrawingLink) {
-            const target = this.getShapeFromNode(e.target);
-            if (target && target.id !== this.tempShape.id) this.prototype.links.push({ id: this.generateId(), sourceId: this.tempShape.id, targetId: target.id });
-            if (this.tempLinkNode) this.tempLinkNode.remove();
-            this.isDrawingLink = false; this.tempShape = null; this.prototype.render(); this.saveState();
-        } else if (this.isDrawing) {
-            this.isDrawing = false;
-            if (this.tempShape.width < 5 && this.tempShape.height < 5 && this.tempShape.type !== 'text' && this.tempShape.type !== 'path') this.deleteShapeObj(this.tempShape.id);
-            else {
-                const tCx = this.tempShape.x + this.tempShape.width/2; const tCy = this.tempShape.y + this.tempShape.height/2;
-                const container = [...this.shapes].reverse().find(s => (s.type === 'frame' || s.type === 'group') && s.id !== this.tempShape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
-                if (container) this.tempShape.groupId = container.id;
-                this.selectedIds = [this.tempShape.id]; 
+            [t.y, t.y + t.height/2, t.y + t.height].forEach(yVal => {
+                if (Math.abs(pt.y - yVal) < threshold) { ptY = yVal; this.selection.smartGuides.push({type:'h', pos:yVal, start:Math.min(this.interaction.dragStart.x, t.x), end:Math.max(pt.x, t.x+t.width)}); }
+            });
+        });
+
+        const w = ptX - this.interaction.dragStart.x;
+        const h = ptY - this.interaction.dragStart.y;
+        this.interaction.tempShape.x = w < 0 ? ptX : this.interaction.dragStart.x;
+        this.interaction.tempShape.y = h < 0 ? ptY : this.interaction.dragStart.y;
+        this.interaction.tempShape.width = Math.abs(w);
+        this.interaction.tempShape.height = Math.abs(h);
+        this.updateShapeNode(this.interaction.tempShape);
+    }
+
+    updateDragging(e, pt) {
+        const dx = pt.x - this.interaction.dragStart.x;
+        const dy = pt.y - this.interaction.dragStart.y;
+        this.interaction.dragStart = pt;
+        
+        let snapDx = dx; let snapDy = dy;
+        this.selection.smartGuides = [];
+        
+        if (this.selectedIds.length === 1 && !e.altKey) {
+            const me = this.getShapeById(this.selectedIds[0]);
+            if (me && !me.groupId) {
+                const threshold = 5 / this.viewport.transform.scale;
                 
-                // Visual Pulse for creation
-                if (this.tempShape.node) {
-                    this.tempShape.node.classList.add('creation-pulse');
-                    setTimeout(() => this.tempShape.node.classList.remove('creation-pulse'), 1500);
+                let checkX = dx; let checkY = dy;
+                if (e.shiftKey) {
+                    if (Math.abs(dx) > Math.abs(dy)) checkY = 0;
+                    else checkX = 0;
                 }
+                
+                const mcX = me.x + checkX + me.width/2; const mcY = me.y + checkY + me.height/2;
+                this.shapes.forEach(t => {
+                    if(t.id === me.id || t.isHidden || t.groupId) return;
+                    if(Math.abs(mcX - (t.x + t.width/2)) < threshold) { snapDx = (t.x + t.width/2) - me.width/2 - me.x; this.selection.smartGuides.push({type:'v', pos:t.x + t.width/2, start:Math.min(me.y, t.y), end:Math.max(me.y+me.height, t.y+t.height)}); }
+                    if(Math.abs(mcY - (t.y + t.height/2)) < threshold) { snapDy = (t.y + t.height/2) - me.height/2 - me.y; this.selection.smartGuides.push({type:'h', pos:t.y + t.height/2, start:Math.min(me.x, t.x), end:Math.max(me.x+me.width, t.x+t.width)}); }
+                });
+            }
+        }
 
-                if (this.tempShape.type === 'frame') {
-                    this.setTool('select');
-                    if (this.callbacks.onToolChange) this.callbacks.onToolChange('select');
-                }
+        let mDx = dx; let mDy = dy;
+        if (e.shiftKey) {
+            if (Math.abs(dx) > Math.abs(dy)) mDy = 0;
+            else mDx = 0;
+        }
 
-                this.fireSelectionChange(); this.updateUI();
-                if (this.tempShape.type === 'text') this.callbacks.onDoubleClickText(this.tempShape, e);
+        this.selectedIds.forEach(id => {
+            const shape = this.getShapeById(id);
+            if (!shape) return;
+            this.moveShapeRecursive(id, mDx + snapDx, mDy + snapDy);
+            if (shape.node) this.svg.appendChild(shape.node); // Bring to front during drag
+            if (shape.groupId) {
+                const parent = this.getShapeById(shape.groupId);
+                if (parent && parent.isAutoLayout) this.autoLayout.apply(parent);
+            } else this.autoLayout.triggerPass(shape);
+        });
+
+        // Highlight potential parent
+        this.svg.querySelectorAll('.potential-parent').forEach(n => n.classList.remove('potential-parent'));
+        if (this.selectedIds.length === 1) {
+            const shape = this.getShapeById(this.selectedIds[0]);
+            if (['rectangle', 'ellipse', 'star', 'triangle', 'arrow', 'path', 'text', 'image'].includes(shape.type)) {
+                const container = [...this.shapes].reverse().find(s => s.type === 'frame' && s.id !== shape.id && !s.isHidden && !s.isLocked && pt.x >= s.x && pt.x <= s.x + s.width && pt.y >= s.y && pt.y <= s.y + s.height);
+                if (container && container.node) container.node.classList.add('potential-parent');
+            }
+        }
+        
+        this.updateUI();
+    }
+
+    moveShapeRecursive(shapeId, dx, dy) {
+        const shape = this.getShapeById(shapeId);
+        if (!shape) return;
+        this.shapes.filter(c => c.groupId === shapeId).forEach(c => this.moveShapeRecursive(c.id, dx, dy));
+        shape.x += dx; shape.y += dy;
+        this.updateShapeNode(shape);
+    }
+
+    updateResizing(e, pt) {
+        const shape = this.getShapeById(this.selectedIds[0]);
+        let dx = pt.x - this.interaction.dragStart.x; 
+        let dy = pt.y - this.interaction.dragStart.y;
+        this.interaction.dragStart = pt;
+        
+        const old = { w: shape.width, h: shape.height, x: shape.x, y: shape.y };
+        
+        if (e.shiftKey) {
+            const ratio = old.w / old.h;
+            if (this.interaction.activeHandle.length === 2) { // Corners
+                if (Math.abs(dx) > Math.abs(dy)) dy = dx / ratio;
+                else dx = dy * ratio;
+            }
+        }
+        
+        if (this.interaction.activeHandle.includes('r')) shape.width += dx;
+        if (this.interaction.activeHandle.includes('l')) { shape.width -= dx; shape.x += dx; }
+        if (this.interaction.activeHandle.includes('b')) shape.height += dy;
+        if (this.interaction.activeHandle.includes('t')) { shape.height -= dy; shape.y += dy; }
+        shape.width = Math.max(1, shape.width); shape.height = Math.max(1, shape.height);
+
+        if (shape.type === 'group' || shape.type === 'frame') {
+            const sx = shape.width / old.w; const sy = shape.height / old.h;
+            this.shapes.filter(s => s.groupId === shape.id).forEach(c => {
+                c.x = shape.x + (c.x - old.x) * sx; c.y = shape.y + (c.y - old.y) * sy;
+                c.width *= sx; c.height *= sy;
+                this.updateShapeNode(c);
+            });
+        }
+        this.updateShapeNode(shape);
+        if (shape.isAutoLayout) this.autoLayout.apply(shape);
+        this.updateUI();
+    }
+
+    updateRotating(pt) {
+        const shape = this.getShapeById(this.selectedIds[0]);
+        if (!shape) return;
+        
+        const cx = shape.x + shape.width / 2;
+        const cy = shape.y + shape.height / 2;
+        
+        // Calculate the angle between the vertical axis and the line from center to mouse
+        const angle = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI;
+        
+        // +90 because the handle is at the top
+        shape.rotation = Math.round(angle + 90);
+        this.updateShapeNode(shape);
+        this.updateUI();
+        this.callbacks.onPropertyChange(shape, 'rotation', shape.rotation);
+    }
+
+    finalizePen() {
+        if (this.interaction.tempShape) {
+            if (this.interaction.tempShape.finalize) this.interaction.tempShape.finalize();
+            if (this.interaction.tempShape.width < 2 && this.interaction.tempShape.height < 2) {
+                this.deleteShapeObj(this.interaction.tempShape.id);
+            } else {
+                this.selectedIds = [this.interaction.tempShape.id];
                 this.callbacks.onSceneChange(); this.saveState();
             }
-            this.tempShape = null;
-        } else if (this.isDragging) {
-            // Drag-to-nest logic
-            this.selectedIds.forEach(id => {
-                const shape = this.getShapeById(id);
-                if (!shape || shape.type === 'group' || shape.type === 'frame') return;
-                
-                const tCx = shape.x + shape.width/2; const tCy = shape.y + shape.height/2;
-                const container = [...this.shapes].reverse().find(s => s.type === 'frame' && s.id !== shape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
-                
-                if (container) {
-                    shape.groupId = container.id;
-                    if (container.isAutoLayout) this.autoLayout.apply(container);
-                } else if (shape.groupId) {
-                    const oldParent = this.getShapeById(shape.groupId);
-                    delete shape.groupId;
-                    if (oldParent && oldParent.isAutoLayout) this.autoLayout.apply(oldParent);
-                }
-            });
-            this.callbacks.onSceneChange(); this.saveState();
-        } else if (this.isResizing) {
+        }
+        this.interaction.state = 'idle';
+        this.setTool('select');
+        if (this.callbacks.onToolChange) this.callbacks.onToolChange('select');
+        this.updateUI(); this.fireSelectionChange();
+        this.interaction.tempShape = null;
+    }
+
+    finishRubberband(e) {
+        const pt = this.viewport.getCanvasPoint(e);
+        const w = pt.x - this.interaction.dragStart.x; const h = pt.y - this.interaction.dragStart.y;
+        const rx = w < 0 ? pt.x : this.interaction.dragStart.x; const ry = h < 0 ? pt.y : this.interaction.dragStart.y;
+        const absW = Math.abs(w); const absH = Math.abs(h);
+        
+        const newSel = [];
+        this.shapes.forEach(sh => {
+            if (sh.isHidden || sh.isLocked) return;
+            const inBox = sh.x < rx+absW && sh.x+sh.width > rx && sh.y < ry+absH && sh.y+sh.height > ry;
+            if (inBox && (!sh.groupId || sh.type === 'group')) newSel.push(sh.id);
+        });
+        this.selectedIds = e.shiftKey ? [...new Set([...this.selectedIds, ...newSel])] : newSel;
+        if (this.interaction.rubberbandBox) this.interaction.rubberbandBox.remove();
+        this.fireSelectionChange();
+    }
+
+    finishLinking(e) {
+        const target = this.getShapeFromNode(e.target);
+        if (target && target.id !== this.interaction.tempShape.id) {
+            this.prototype.links.push({ id: this.generateId(), sourceId: this.interaction.tempShape.id, targetId: target.id });
+        }
+        if (this.interaction.tempLinkNode) this.interaction.tempLinkNode.remove();
+        this.interaction.tempShape = null; this.prototype.render(); this.saveState();
+    }
+
+    finishDrawing(e) {
+        const shape = this.interaction.tempShape;
+        if (shape.width < 5 && shape.height < 5 && !['text', 'path'].includes(shape.type)) {
+            this.deleteShapeObj(shape.id);
+        } else {
+            const tCx = shape.x + shape.width/2; const tCy = shape.y + shape.height/2;
+            const container = [...this.shapes].reverse().find(s => (s.type === 'frame' || s.type === 'group') && s.id !== shape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
+            
+            if (container) {
+                this.reorderShape(shape.id, container.id, 'inside');
+            } else {
+                this.reorderShape(shape.id, null, null);
+            }
+            
+            this.selectedIds = [shape.id]; 
+            if (shape.node) {
+                shape.node.classList.add('creation-pulse');
+                setTimeout(() => shape.node.classList.remove('creation-pulse'), 1500);
+            }
+            this.setTool('select');
+            if (this.callbacks.onToolChange) this.callbacks.onToolChange('select');
+            if (shape.type === 'text') this.callbacks.onDoubleClickText(shape, e);
             this.callbacks.onSceneChange(); this.saveState();
         }
-        this.isDragging = false; this.isResizing = false; this.activeHandle = null; this.selection.smartGuides = [];
+        this.interaction.tempShape = null;
+        this.fireSelectionChange();
+        this.updateUI();
+    }
+
+    finishDragging(pt) {
+        this.svg.querySelectorAll('.potential-parent').forEach(n => n.classList.remove('potential-parent'));
+        this.selectedIds.forEach(id => {
+            const shape = this.getShapeById(id);
+            if (!shape || ['group', 'frame'].includes(shape.type)) return;
+            const container = pt ? [...this.shapes].reverse().find(s => s.type === 'frame' && s.id !== shape.id && !s.isHidden && !s.isLocked && pt.x >= s.x && pt.x <= s.x + s.width && pt.y >= s.y && pt.y <= s.y + s.height) : null;
+            
+            if (container) {
+                if (shape.groupId !== container.id) {
+                    this.reorderShape(shape.id, container.id, 'inside');
+                    if (container.isAutoLayout) this.autoLayout.apply(container);
+                }
+            } else if (shape.groupId) {
+                const oldParent = this.getShapeById(shape.groupId);
+                this.reorderShape(shape.id, null, null);
+                if (oldParent && oldParent.isAutoLayout) this.autoLayout.apply(oldParent);
+            }
+        });
+        this.callbacks.onSceneChange(); this.saveState();
+        this.updateUI();
+    }
+
+    finishResizing() {
+        this.callbacks.onSceneChange(); this.saveState();
+        this.updateUI();
+    }
+
+    finishRotating() {
+        this.callbacks.onSceneChange(); this.saveState();
         this.updateUI();
     }
 }
