@@ -103,6 +103,20 @@ class PropertiesPanelManager {
             this.addInput('Кількість променів (Star Points)', 'points', shape.points || 5, 'number', pointsRow, 'P');
         }
 
+        if (shape.type === 'line') {
+            const lineRow = this.addRow();
+            this.addSelect('Стиль лінії', 'lineStyle', shape.lineStyle, [
+                {label: 'Пряма', value: 'straight'},
+                {label: 'Хвиляста', value: 'wavy'}
+            ], lineRow);
+            
+            if (shape.lineStyle === 'wavy') {
+                const waveRow = this.addRow();
+                this.addInput('Амплітуда', 'amplitude', shape.amplitude, 'number', waveRow, 'A');
+                this.addInput('Частота', 'frequency', shape.frequency, 'number', waveRow, 'F');
+            }
+        }
+
         this.addSectionTitle('Вигляд');
         const appearanceRow = this.addRow();
         this.addSlider('Прозорість', 'opacity', shape.opacity !== undefined ? shape.opacity : 1, 0, 1, 0.01, appearanceRow, 'sun');

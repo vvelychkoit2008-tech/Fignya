@@ -195,6 +195,7 @@ class FihnyaEngine {
             case 'triangle': shape = new TriangleShape(params); break;
             case 'arrow': shape = new ArrowShape(params); break;
             case 'star': shape = new StarShape(params); break;
+            case 'line': shape = new LineShape(params); break;
             case 'text': shape = new TextShape(params); break;
             case 'path': shape = new PathShape(params); break;
             case 'image': shape = new ImageShape(params); break;
@@ -211,9 +212,9 @@ class FihnyaEngine {
             id: this.generateId(), 
             type, x, y, 
             width: 0, height: 0, 
-            fill: isFrame ? '#ffffff' : this.defaultStyle.fill, 
-            stroke: this.defaultStyle.stroke, 
-            strokeWidth: this.defaultStyle.strokeWidth 
+            fill: (type === 'line' || type === 'path' || type === 'arrow') ? 'none' : (this.defaultStyle.fill || '#D9D9D9'),
+            stroke: (type === 'line' || type === 'path' || type === 'arrow') ? (this.defaultStyle.stroke || '#000000') : (this.defaultStyle.stroke || 'none'),
+            strokeWidth: (type === 'line' || type === 'path' || type === 'arrow') ? (this.defaultStyle.strokeWidth || 2) : (this.defaultStyle.strokeWidth || 0)
         };
         return this.createShapeByType(params);
     }
@@ -512,8 +513,8 @@ class FihnyaEngine {
     }
 
     handleKeyboardTools(e) {
-        const keyCodeMap = { 'KeyV': 'select', 'KeyR': 'rectangle', 'KeyO': 'ellipse', 'KeyC': 'ellipse', 'KeyP': 'pen', 'KeyT': 'text', 'KeyF': 'frame', 'KeyI': 'image' };
-        const toolMap = { 'v': 'select', 'r': 'rectangle', 'o': 'ellipse', 'c': 'ellipse', 'p': 'pen', 't': 'text', 'f': 'frame', 'i': 'image', 'м': 'select', 'к': 'rectangle', 'щ': 'ellipse', 'с': 'ellipse', 'з': 'pen', 'е': 'text', 'а': 'frame', 'ш': 'image' };
+        const keyCodeMap = { 'KeyV': 'select', 'KeyR': 'rectangle', 'KeyO': 'ellipse', 'KeyC': 'ellipse', 'KeyP': 'pen', 'KeyT': 'text', 'KeyF': 'frame', 'KeyI': 'image', 'KeyL': 'line' };
+        const toolMap = { 'v': 'select', 'r': 'rectangle', 'o': 'ellipse', 'c': 'ellipse', 'p': 'pen', 't': 'text', 'f': 'frame', 'i': 'image', 'l': 'line', 'м': 'select', 'к': 'rectangle', 'щ': 'ellipse', 'с': 'ellipse', 'з': 'pen', 'е': 'text', 'а': 'frame', 'ш': 'image', 'д': 'line' };
         
         let toolKey = keyCodeMap[e.code] || toolMap[e.key.toLowerCase()];
         
@@ -597,11 +598,23 @@ class FihnyaEngine {
         const state = this.interaction.state;
         const pt = this.viewport.getCanvasPoint(e);
 
-        if (state === 'panning') {
-            this.viewport.pan(e.clientX - this.interaction.lastMouse.x, e.clientY - this.interaction.lastMouse.y);
+        if (state === 'panning' || ((state === 'dragging' || state === 'resizing' || state === 'rotating') && (e.button === 1 || this.interaction.isSpaceDown))) {
+            const dx = e.clientX - this.interaction.lastMouse.x;
+            const dy = e.clientY - this.interaction.lastMouse.y;
+            this.viewport.pan(dx, dy);
             this.interaction.lastMouse = { x: e.clientX, y: e.clientY };
             this.interaction.didPan = true;
-        } else if (state === 'rubberbanding') {
+            
+            // If we are currently dragging/resizing, we must adjust the origin to keep the object fixed relative to the pointer
+            if (state !== 'panning') {
+                // Adjust dragStart so the object stay pinned to the cursor during panning
+                this.interaction.dragStart.x -= dx / this.viewport.transform.scale;
+                this.interaction.dragStart.y -= dy / this.viewport.transform.scale;
+            }
+            if (state === 'panning') return;
+        }
+
+        if (state === 'rubberbanding') {
             this.updateRubberband(pt);
         } else if (state === 'pen' && this.interaction.tempShape) {
             let ptX = pt.x; let ptY = pt.y;
@@ -613,7 +626,7 @@ class FihnyaEngine {
                     if (Math.abs(pt.x - xVal) < threshold) { ptX = xVal; this.selection.smartGuides.push({type:'v', pos:xVal, start:Math.min(pt.y, t.y), end:Math.max(pt.y, t.y+t.height)}); }
                 });
                 [t.y, t.y + t.height/2, t.y + t.height].forEach(yVal => {
-                    if (Math.abs(pt.y - yVal) < threshold) { ptY = yVal; this.selection.smartGuides.push({type:'h', pos:yVal, start:Math.min(pt.x, t.x), end:Math.max(pt.x, t.x+t.width)}); }
+                    if (Math.abs(pt.y - yVal) < threshold) { ptY = yVal; this.selection.smartGuides.push({type:'h', pos:yVal, start:Math.min(pt.x, t.x), end:Math.max(pt.x, t.x+width)}); }
                 });
             });
             this.interaction.lastMouse = { x: ptX, y: ptY }; // Store snapped for next point
@@ -756,27 +769,22 @@ class FihnyaEngine {
     }
 
     updateDrawing(pt) {
-        let ptX = pt.x; let ptY = pt.y;
-        const threshold = 5 / this.viewport.transform.scale;
-        this.selection.smartGuides = [];
+        const shape = this.interaction.tempShape;
+        if (!shape) return;
 
-        this.shapes.forEach(t => {
-            if (t.id === this.interaction.tempShape.id || t.isHidden || t.isLocked) return;
-            [t.x, t.x + t.width/2, t.x + t.width].forEach(xVal => {
-                if (Math.abs(pt.x - xVal) < threshold) { ptX = xVal; this.selection.smartGuides.push({type:'v', pos:xVal, start:Math.min(this.interaction.dragStart.y, t.y), end:Math.max(pt.y, t.y+t.height)}); }
-            });
-            [t.y, t.y + t.height/2, t.y + t.height].forEach(yVal => {
-                if (Math.abs(pt.y - yVal) < threshold) { ptY = yVal; this.selection.smartGuides.push({type:'h', pos:yVal, start:Math.min(this.interaction.dragStart.x, t.x), end:Math.max(pt.x, t.x+t.width)}); }
-            });
-        });
-
-        const w = ptX - this.interaction.dragStart.x;
-        const h = ptY - this.interaction.dragStart.y;
-        this.interaction.tempShape.x = w < 0 ? ptX : this.interaction.dragStart.x;
-        this.interaction.tempShape.y = h < 0 ? ptY : this.interaction.dragStart.y;
-        this.interaction.tempShape.width = Math.abs(w);
-        this.interaction.tempShape.height = Math.abs(h);
-        this.updateShapeNode(this.interaction.tempShape);
+        if (shape.type === 'line') {
+            shape.x2 = pt.x;
+            shape.y2 = pt.y;
+        } else {
+            const dx = pt.x - this.interaction.dragStart.x;
+            const dy = pt.y - this.interaction.dragStart.y;
+            shape.width = Math.max(1, Math.abs(dx));
+            shape.height = Math.max(1, Math.abs(dy));
+            if (dx < 0) shape.x = pt.x;
+            if (dy < 0) shape.y = pt.y;
+        }
+        
+        this.updateShapeNode(shape);
     }
 
     updateDragging(e, pt) {

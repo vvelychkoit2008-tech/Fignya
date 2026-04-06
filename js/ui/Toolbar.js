@@ -205,6 +205,24 @@ class ToolbarManager {
             `;
         }
 
+        if (shape.type === 'line') {
+            geoGroup.innerHTML += `
+                <i data-lucide="activity" style="width:12px;opacity:0.6" title="Стиль лінії"></i>
+                <select class="ctx-input" data-key="lineStyle" style="width:80px; margin-left:4px;">
+                    <option value="straight" ${shape.lineStyle === 'straight' ? 'selected' : ''}>Пряма</option>
+                    <option value="wavy" ${shape.lineStyle === 'wavy' ? 'selected' : ''}>Хвиля</option>
+                </select>
+            `;
+            if (shape.lineStyle === 'wavy') {
+                 geoGroup.innerHTML += `
+                    <span style="font-size: 11px; opacity: 0.8; margin-left:8px; margin-right:2px;">Амп.</span>
+                    <input type="number" class="ctx-input" value="${shape.amplitude || 10}" data-key="amplitude" style="width:40px">
+                    <span style="font-size: 11px; opacity: 0.8; margin-left:8px; margin-right:2px;">Част.</span>
+                    <input type="number" class="ctx-input" value="${shape.frequency || 0.05}" data-key="frequency" step="0.01" style="width:50px">
+                `;
+            }
+        }
+
         container.appendChild(geoGroup);
 
         if (geoGroup.childNodes.length > 0) {
