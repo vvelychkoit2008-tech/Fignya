@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://i.imgur.com/G5TnH7L.png" alt="Fihnya Logo" width="120" />
+  <img src="https://i.ibb.co/9HwRT2sZ/fignya.png" alt="Fihnya Logo" width="120" />
   <h1>✨ Fihnya Web Editor</h1>
   <p><b>Потужний, швидкий та легкий векторний графічний редактор у твоєму браузері.</b></p>
   <p>Створений з любов'ю на Vanilla JavaScript без жодних важких фреймворків.</p>
