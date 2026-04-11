@@ -9,6 +9,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
+    <!-- Google APIs for Drive integration -->
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+    <script>
+        // Global init functions for async script loading
+        let _storageManager = null;
+        function gapiLoaded() { if (_storageManager) _storageManager.initGapi(); }
+        function gisLoaded() { if (_storageManager) _storageManager.initGis(); }
+    </script>
     <script>
         // Apply theme immediately to prevent FOUC
         (function() {
@@ -25,12 +34,19 @@
         <header class="toolbar">
             <div class="toolbar-left">
                 <div class="logo">Fihnya v4.0</div>
-                <div class="file-name">Без назви</div>
+                <div class="file-name-wrapper" style="display: flex; align-items: center; cursor: pointer; position: relative;">
+                    <div class="file-name" id="file-name-display" title="Подвійний клік для перейменування" style="cursor: text;">Без назви</div>
+                    <div id="btn-projects-dropdown" style="display: flex; padding: 4px; border-radius: 4px; transition: background 0.2s; margin-left: 4px;" title="Меню проектів">
+                        <i data-lucide="chevron-down" style="width: 16px; height: 16px; opacity: 0.7;"></i>
+                    </div>
+                    <div id="projects-dropdown" class="projects-dropdown hidden shadow-lg" style="position: absolute; top: 100%; left: 0; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; width: 280px; z-index: 1000; padding: 12px; margin-top: 8px;">
+                    </div>
+                </div>
                 <div class="header-divider"></div>
                 <div class="default-styles" id="default-styles">
-                <div class="header-actions">
-                        <button class="header-action-btn" id="btn-undo" title="Відмінити (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
-                        <button class="header-action-btn" id="btn-redo" title="Повторити (Ctrl+Y)"><i data-lucide="redo-2"></i></button>
+                    <div class="header-actions">
+                        <button class="header-action-btn" id="btn-undo" title="Відмінити (Ctrl+Z)"><i data-lucide="corner-up-left"></i></button>
+                        <button class="header-action-btn" id="btn-redo" title="Повторити (Ctrl+Y)"><i data-lucide="corner-up-right"></i></button>
                         <div class="header-dividermini"></div>
                         <button class="header-action-btn" id="btn-group-cmd" title="Згрупувати (Ctrl+G)"><i data-lucide="group"></i></button>
                         <button class="header-action-btn" id="btn-ungroup-cmd" title="Розгрупувати (Ctrl+Shift+G)"><i data-lucide="ungroup"></i></button>
@@ -41,11 +57,13 @@
                     <!-- Contextual Toolbar -->
                     <div id="contextual-toolbar" class="hidden"></div>
                     <div class="header-divider"></div>
-                    <div class="style-item-wrapper" style="gap: 8px; display: flex; align-items: center;">
-                        <div class="style-preview" id="preview-default-fill" title="Колір заливки за замовчуванням (Default Fill)" style="background:#D9D9D9"></div>
-                        <div class="style-preview" id="preview-default-stroke" title="Колір контуру за замовчуванням (Default Stroke)" style="background:#000000"></div>
-                        <div class="style-input" title="Товщина контуру (Default Stroke Width)">
-                            <i data-lucide="maximize-2" style="width:12px;opacity:0.6;margin-right:4px;"></i>
+                    <div class="style-item-wrapper" style="display: flex; align-items: center; gap: 4px;">
+                        <i data-lucide="paint-bucket" style="width: 14px; height: 14px; color: var(--text-secondary);" title="Заливка"></i>
+                        <div class="style-preview" id="preview-default-fill" title="Колір заливки за замовчуванням" style="background:#D9D9D9"></div>
+                        <div class="header-dividermini" style="margin: 0 4px;"></div>
+                        <i data-lucide="edit-3" style="width: 14px; height: 14px; color: var(--text-secondary);" title="Контур"></i>
+                        <div class="style-preview" id="preview-default-stroke" title="Колір контуру за замовчуванням" style="background:#000000"></div>
+                        <div class="style-input" title="Товщина контуру">
                             <input type="number" id="input-default-stroke-width" value="1" min="0" max="100">
                         </div>
                     </div>
@@ -65,23 +83,26 @@
                     <button class="mode-btn" data-mode="prototype">Prototype</button>
                     <button class="mode-btn" data-mode="inspect">Inspect</button>
                 </div>
+                <button class="action-btn cloud-btn" id="btn-cloud" title="Хмара та проекти">
+                    <i data-lucide="cloud"></i>
+                    <span class="cloud-sync-dot" id="cloud-sync-dot"></span>
+                </button>
                 <button class="action-btn" id="btn-theme-toggle" title="Змінити тему">
                     <i data-lucide="moon"></i>
                 </button>
-                <button class="action-btn header-accent" id="btn-play" title="Запустити прототип" style="display:none;">
-                    <i data-lucide="play"></i> <span>Play</span>
+                <button class="action-btn" id="btn-play" title="Запустити прототип" style="display:none;">
+                    <i data-lucide="play"></i>
                 </button>
-                <button class="action-btn header-export" id="btn-export-png" title="Експорт PNG">
+                <button class="action-btn" id="btn-export-png" title="Експорт PNG">
                     <i data-lucide="image"></i>
                 </button>
-                <button class="action-btn header-export" id="btn-export-svg" title="Експорт SVG">
+                <button class="action-btn" id="btn-export-svg" title="Експорт SVG">
                     <i data-lucide="file-code"></i>
                 </button>
-                <div class="header-divider"></div>
-                <button class="action-btn header-primary" id="btn-export-json" title="Зберегти JSON">
+                <button class="action-btn" id="btn-export-json" title="Зберегти JSON">
                     <i data-lucide="save"></i>
                 </button>
-                <button class="action-btn header-primary" id="btn-import-json" title="Відкрити проект JSON">
+                <button class="action-btn" id="btn-import-json" title="Завантажити JSON">
                     <i data-lucide="folder-open"></i>
                 </button>
             </div>
@@ -89,8 +110,12 @@
 
         <main class="main-workspace">
             <aside class="sidebar sidebar-left">
-                <div class="panel-header"><h3>Шари</h3></div>
-                <div class="layers-list" id="layers-list"></div>
+                <div class="panel-header">
+                    <h3>Шари</h3>
+                </div>
+                <div class="sidebar-content" style="padding-top: 0;">
+                    <div class="layers-list" id="layers-list"></div>
+                </div>
             </aside>
 
             <div class="canvas-container" id="canvas-container">
@@ -118,13 +143,11 @@
                 <div class="tools-group shadow-lg">
                     <button class="tool-btn active" data-tool="select" title="Вказівник (V)" data-hotkey="V"><i data-lucide="mouse-pointer-2"></i></button>
                     <button class="tool-btn" data-tool="frame" title="Фрейм / AutoLayout (F)" data-hotkey="F"><i data-lucide="frame"></i></button>
-                    <button class="tool-btn" data-tool="line" title="Лінія (L)" data-hotkey="L"><i data-lucide="minus" style="transform: rotate(-45deg)"></i></button>
                     <div class="tool-divider"></div>
                     <button class="tool-btn" data-tool="rectangle" title="Прямокутник (R)" data-hotkey="R"><i data-lucide="square"></i></button>
                     <button class="tool-btn" data-tool="ellipse" title="Еліпс (O)" data-hotkey="O"><i data-lucide="circle"></i></button>
                     <button class="tool-btn" data-tool="triangle" title="Трикутник" data-hotkey="Shift+T"><i data-lucide="triangle"></i></button>
                     <button class="tool-btn" data-tool="star" title="Зірка" data-hotkey="Shift+S"><i data-lucide="star"></i></button>
-                    <button class="tool-btn" data-tool="arrow" title="Стрілка" data-hotkey="Shift+A"><i data-lucide="arrow-right"></i></button>
                     <button class="tool-btn" data-tool="pen" title="Векторне перо (P)" data-hotkey="P"><i data-lucide="pen-tool"></i></button>
                     <button class="tool-btn" data-tool="text" title="Текст (T)" data-hotkey="T"><i data-lucide="type"></i></button>
                     <button class="tool-btn" data-tool="image" title="Зображення (I)" id="tool-image" data-hotkey="I"><i data-lucide="image"></i></button>
@@ -133,6 +156,11 @@
             </div>
         </main>
         
+        <!-- CLOUD PANEL DROPDOWN -->
+        <div id="cloud-panel" class="cloud-panel hidden">
+            <div class="cloud-panel-content"></div>
+        </div>
+
         <!-- МОДАЛЬНІ ВІКНА / ДІАЛОГИ ЕКСПОРТУ -->
         <div id="export-modal" class="modal hidden">
             <div class="modal-content">
@@ -155,7 +183,7 @@
         </div>
 
         <!-- ПРОТОТИП ПЛЕЄР -->
-        <div id="proto-player" class="prototype-player hidden">
+        <div id="proto-player" class="prototype-player hidden" style="display:none;">
             <button id="btn-close-proto" class="close-player"><i data-lucide="x"></i> Закрити презентацію</button>
             <div class="player-stage" id="proto-player-inner"></div>
         </div>
@@ -166,8 +194,10 @@
         
         <!-- CONTEXT MENU (Right Click) -->
         <div id="context-menu" class="context-menu hidden">
-            <div class="cm-item" data-action="forward">На передній план <span class="cm-shortcut">]</span></div>
-            <div class="cm-item" data-action="backward">На задній план <span class="cm-shortcut">[</span></div>
+            <div class="cm-item" data-action="front">На самий перед <span class="cm-shortcut">Shift+]</span></div>
+            <div class="cm-item" data-action="forward">Перемістити вперед <span class="cm-shortcut">]</span></div>
+            <div class="cm-item" data-action="backward">Перемістити назад <span class="cm-shortcut">[</span></div>
+            <div class="cm-item" data-action="back">На самий зад <span class="cm-shortcut">Shift+[</span></div>
             <div class="cm-divider"></div>
             <div class="cm-item" data-action="group">Об'єднати в групу <span class="cm-shortcut">Ctrl+G</span></div>
             <div class="cm-item" data-action="ungroup">Розгрупувати <span class="cm-shortcut">Ctrl+Shift+G</span></div>
@@ -190,8 +220,6 @@
     <script src="js/shapes/ImageShape.js"></script>
     <script src="js/shapes/FrameShape.js"></script>
     <script src="js/shapes/TriangleShape.js"></script>
-    <script src="js/shapes/ArrowShape.js"></script>
-    <script src="js/shapes/LineShape.js"></script>
     <script src="js/shapes/StarShape.js"></script>
     <script src="js/shapes/GroupShape.js"></script>
 
@@ -202,6 +230,7 @@
     <script src="js/core/Selection.js"></script>
     <script src="js/core/AutoLayout.js"></script>
     <script src="js/core/Prototype.js"></script>
+    <script src="js/core/StorageManager.js"></script>
 
     <!-- UI Managers -->
     <script src="js/ui/ColorPicker.js"></script>
@@ -212,6 +241,7 @@
     <script src="js/ui/ExportManager.js"></script>
     <script src="js/ui/PrototypePlayer.js"></script>
     <script src="js/ui/ThemeManager.js"></script>
+    <script src="js/ui/CloudPanel.js"></script>
 
     <script src="js/engine.js"></script>
     <script src="js/app.js"></script>

@@ -40,7 +40,9 @@ class ToolbarManager {
                 this.setActiveMode(btn);
                 const mode = btn.dataset.mode;
                 this.engine.setMode(mode);
-                this.btnPlay.style.display = mode === 'prototype' ? 'flex' : 'none';
+                // Show Play button in prototype mode OR when links exist
+                const hasLinks = this.engine.prototype.links.length > 0;
+                this.btnPlay.style.display = (mode === 'prototype' || hasLinks) ? 'flex' : 'none';
                 this.updateProtoHelper(mode === 'prototype');
                 this.engine.fireSelectionChange();
             });
@@ -109,9 +111,12 @@ class ToolbarManager {
                 helper.className = 'proto-helper-panel';
                 helper.innerHTML = `
                     <div class="ph-title"><i data-lucide="info"></i> Як працює прототипування</div>
-                    <div class="ph-step">1. Виберіть об'єкт, який буде "кнопкою"</div>
-                    <div class="ph-step">2. Затисніть та тягніть синю лінію до іншого фрейму</div>
-                    <div class="ph-step">3. Натисніть Play у верхньому правому куті</div>
+                    <div class="ph-step">1. Створіть кілька <strong>фреймів</strong> (F) — це ваші "екрани"</div>
+                    <div class="ph-step">2. Додайте елементи (кнопки, тексти) всередину фреймів</div>
+                    <div class="ph-step">3. Перетягніть <span style="color:#0A84FF">синій кружок</span> від елемента до цільового фрейму</div>
+                    <div class="ph-step">4. Стрілка покаже напрямок переходу</div>
+                    <div class="ph-step">5. Натисніть <strong>▶ Play</strong> для перегляду</div>
+                    <div class="ph-step" style="margin-top:8px;opacity:0.6">Клік на стрілку — вибрати, Delete — видалити</div>
                 `;
                 document.body.appendChild(helper);
                 lucide.createIcons({root: helper});
@@ -180,7 +185,6 @@ class ToolbarManager {
         if (shape.type === 'rectangle' || shape.type === 'frame') {
             geoGroup.innerHTML += `
                 <i data-lucide="corner-up-right" style="width:12px;opacity:0.6" title="Радіус кутів"></i>
-                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Радіус</span>
                 <input type="number" class="ctx-input" value="${shape.cornerRadius || 0}" data-key="cornerRadius">
             `;
         }
@@ -188,9 +192,8 @@ class ToolbarManager {
         if (shape.type === 'text') {
             geoGroup.innerHTML += `
                 <i data-lucide="type" style="width:12px;opacity:0.6" title="Розмір тексту"></i>
-                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Текст</span>
                 <input type="number" class="ctx-input" value="${shape.fontSize || 16}" data-key="fontSize">
-                <select class="ctx-input" data-key="fontWeight" style="padding:2px; height:22px; width:70px; margin-left:4px;">
+                <select class="ctx-select" data-key="fontWeight">
                     <option value="400" ${shape.fontWeight == 400 ? 'selected' : ''}>Regular</option>
                     <option value="600" ${shape.fontWeight == 600 ? 'selected' : ''}>Bold</option>
                 </select>
@@ -200,27 +203,8 @@ class ToolbarManager {
         if (shape.type === 'star') {
             geoGroup.innerHTML += `
                 <i data-lucide="star" style="width:12px;opacity:0.6" title="Кількість променів"></i>
-                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Промені</span>
                 <input type="number" class="ctx-input" value="${shape.points || 5}" data-key="points" min="3" max="20">
             `;
-        }
-
-        if (shape.type === 'line') {
-            geoGroup.innerHTML += `
-                <i data-lucide="activity" style="width:12px;opacity:0.6" title="Стиль лінії"></i>
-                <select class="ctx-input" data-key="lineStyle" style="width:80px; margin-left:4px;">
-                    <option value="straight" ${shape.lineStyle === 'straight' ? 'selected' : ''}>Пряма</option>
-                    <option value="wavy" ${shape.lineStyle === 'wavy' ? 'selected' : ''}>Хвиля</option>
-                </select>
-            `;
-            if (shape.lineStyle === 'wavy') {
-                 geoGroup.innerHTML += `
-                    <span style="font-size: 11px; opacity: 0.8; margin-left:8px; margin-right:2px;">Амп.</span>
-                    <input type="number" class="ctx-input" value="${shape.amplitude || 10}" data-key="amplitude" style="width:40px">
-                    <span style="font-size: 11px; opacity: 0.8; margin-left:8px; margin-right:2px;">Част.</span>
-                    <input type="number" class="ctx-input" value="${shape.frequency || 0.05}" data-key="frequency" step="0.01" style="width:50px">
-                `;
-            }
         }
 
         container.appendChild(geoGroup);
@@ -237,7 +221,6 @@ class ToolbarManager {
         if (shape.type !== 'image' && shape.type !== 'group' && shape.type !== 'path') {
              styleGroup.innerHTML += `
                 <i data-lucide="move-horizontal" style="width:12px;opacity:0.6" title="Товщина контуру"></i>
-                <span style="font-size: 11px; opacity: 0.8; margin-right: 2px;">Контур</span>
                 <input type="number" class="ctx-input" value="${shape.strokeWidth || 0}" data-key="strokeWidth" min="0">
             `;
         }

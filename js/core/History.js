@@ -22,6 +22,10 @@ class HistoryManager {
             this.history.shift();
             this.historyIndex--;
         }
+        // Notify StorageManager of state change for auto-save
+        if (this.engine.callbacks.onStateChange) {
+            this.engine.callbacks.onStateChange();
+        }
     }
 
     undo() {

@@ -104,10 +104,30 @@ class LayersPanelManager {
                 this.engine.fireSelectionChange(); this.engine.updateUI(); this.update(); this.engine.saveState();
                 return;
             }
-            if (!e.shiftKey) this.engine.selectedIds = [shape.id];
-            else {
+            if (e.ctrlKey || e.metaKey) {
                 if (this.engine.selectedIds.includes(shape.id)) this.engine.selectedIds = this.engine.selectedIds.filter(id => id !== shape.id);
                 else this.engine.selectedIds.push(shape.id);
+            } else if (e.shiftKey) {
+                if (this.engine.selectedIds.length > 0) {
+                    const lastSelectedId = this.engine.selectedIds[this.engine.selectedIds.length - 1];
+                    const visibleItems = Array.from(this.layersList.querySelectorAll('.layer-item'));
+                    const p1 = visibleItems.findIndex(el => el.dataset.id === lastSelectedId);
+                    const p2 = visibleItems.findIndex(el => el.dataset.id === shape.id);
+                    if (p1 !== -1 && p2 !== -1) {
+                        const start = Math.min(p1, p2);
+                        const end = Math.max(p1, p2);
+                        for (let i = start; i <= end; i++) {
+                            const addId = visibleItems[i].dataset.id;
+                            if (!this.engine.selectedIds.includes(addId)) this.engine.selectedIds.push(addId);
+                        }
+                    } else {
+                        if (!this.engine.selectedIds.includes(shape.id)) this.engine.selectedIds.push(shape.id);
+                    }
+                } else {
+                    this.engine.selectedIds = [shape.id];
+                }
+            } else {
+                this.engine.selectedIds = [shape.id];
             }
             this.engine.fireSelectionChange(); this.engine.updateUI();
         });

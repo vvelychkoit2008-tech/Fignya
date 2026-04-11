@@ -81,21 +81,13 @@ class ViewportManager {
 
         const baseVisualDist = 100 * this.transform.scale;
         let logicalStep = 100;
-        
-        if (this.transform.scale < 0.1) logicalStep = 1000;
-        else if (this.transform.scale < 0.5) logicalStep = 500;
-        else if (this.transform.scale < 2) logicalStep = 100;
-        else if (this.transform.scale < 5) logicalStep = 50;
-        else if (this.transform.scale < 15) logicalStep = 10;
-        else logicalStep = 1;
+        if (baseVisualDist < 30) logicalStep = 500;
+        if (baseVisualDist < 10) logicalStep = 1000;
+        if (baseVisualDist < 2) logicalStep = 5000;
+        if (baseVisualDist > 500) logicalStep = 10;
+        if (baseVisualDist > 2000) logicalStep = 1;
 
-        let visualStep = logicalStep * this.transform.scale;
-        
-        // Safety: If visual step is too small to see, don't draw (prevents browser lockup)
-        if (visualStep < 20) {
-            visualStep *= 5;
-            logicalStep *= 5;
-        }
+        const visualStep = logicalStep * this.transform.scale;
         
         const offsetX = this.transform.x % visualStep;
         const startValX = -Math.floor(this.transform.x / visualStep) * logicalStep;

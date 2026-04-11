@@ -5,7 +5,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const wrapper = document.getElementById('canvas-wrapper');
     const engine = new FihnyaEngine(svg, uiOverlay, wrapper);
 
-    // 2. Initialize UI Managers
+    // 2. Initialize Storage Manager (before UI so we can restore state)
+    const storageManager = new StorageManager(engine);
+    _storageManager = storageManager; // Expose for Google API callbacks
+
+    // 3. Restore last session from localStorage
+    const hadSavedSession = storageManager.loadLastSession();
+
+    // 4. Initialize Google APIs if they loaded before DOMContentLoaded
+    if (typeof gapi !== 'undefined' && !storageManager.gapiInited) {
+        storageManager.initGapi();
+    }
+    if (typeof google !== 'undefined' && google.accounts && !storageManager.gisInited) {
+        storageManager.initGis();
+    }
+
+    // 5. Initialize UI Managers
     const toolbar = new ToolbarManager(
         engine, 
         document.querySelectorAll('.tool-btn'), 
@@ -18,8 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportManager = new ExportManager(engine);
     const prototypePlayer = new PrototypePlayer(engine);
     const themeManager = new ThemeManager();
+    const cloudPanel = new CloudPanelManager(storageManager, engine);
 
-    // 3. Connect Engine Callbacks to UI
+    // 6. Connect Engine Callbacks to UI
     engine.callbacks.onSelectionChange = () => {
         const selected = engine.selectedIds.map(id => engine.getShapeById(id));
         layersPanel.update();
@@ -68,11 +84,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // 4. Global UI Listeners (Export bindings managed in Section 5)
+    // 7. Auto-save to localStorage on every state change
+    engine.callbacks.onStateChange = () => {
+        storageManager.saveToLocal();
+    };
+
+    // 8. Global UI Listeners
+    document.getElementById('btn-export-png').onclick = () => exportManager.exportToImage('png');
+    document.getElementById('btn-export-svg').onclick = () => exportManager.exportToImage('svg');
+    document.getElementById('btn-export-json').onclick = () => exportManager.exportJSON();
+    document.getElementById('btn-import-json').onclick = () => document.getElementById('import-input').click();
+    
+    document.getElementById('import-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => engine.loadJSON(ev.target.result);
+            reader.readAsText(file);
+        }
+    };
 
     document.getElementById('btn-play').onclick = () => prototypePlayer.start();
 
-    // 5. Special UI: Text Editing logic (kept here or can be moved to dedicated manager)
+    // 9. Special UI: Text Editing logic (kept here or can be moved to dedicated manager)
     function startTextEditing(shape, e) {
         const editor = document.createElement('textarea');
         editor.className = 'on-canvas-text-editor';
@@ -121,6 +155,8 @@ document.addEventListener('DOMContentLoaded', () => {
         engine.viewport.zoom(1, cx, cy);
     });
 
+    // Sidebar tabs logic removed
+
     // Export Controls (Local Backend)
     const btnExportPng = document.getElementById('btn-export-png');
     if (btnExportPng) btnExportPng.addEventListener('click', () => exportManager.exportToImage('png'));
@@ -155,3 +191,4 @@ document.addEventListener('DOMContentLoaded', () => {
     propertiesPanel.update();
     lucide.createIcons();
 });
+

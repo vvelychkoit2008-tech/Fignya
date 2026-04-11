@@ -62,6 +62,8 @@ class ContextMenuManager {
             case 'ungroup': this.engine.ungroupSelected(); break;
             case 'lock': this.engine.toggleLockSelected(); break;
             case 'hide': this.engine.toggleHideSelected(); break;
+            case 'front': this.engine.bringToFront(); break;
+            case 'back': this.engine.sendToBack(); break;
             case 'forward': this.engine.bringForward(); break;
             case 'backward': this.engine.sendBackward(); break;
         }
