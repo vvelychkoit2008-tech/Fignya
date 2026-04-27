@@ -26,6 +26,15 @@ class ExportManager {
             source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
         }
 
+        if (format === 'svg') {
+            const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+            const link = document.createElement('a');
+            link.download = 'fihnya-export.svg';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            return;
+        }
+
         const img = new Image();
         img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(source)));
         

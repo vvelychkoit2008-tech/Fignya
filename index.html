@@ -67,6 +67,16 @@
                             <input type="number" id="input-default-stroke-width" value="1" min="0" max="100">
                         </div>
                     </div>
+                    <div class="header-dividermini"></div>
+                    <div class="pen-toolbar-controls" id="pen-toolbar-controls" title="Параметри кривої Pen">
+                        <select id="pen-curve-type" class="pen-toolbar-select">
+                            <option value="line">Line</option>
+                            <option value="quadratic">Quadratic</option>
+                            <option value="cubic" selected>Cubic</option>
+                            <option value="smooth">Smooth</option>
+                        </select>
+                        <input id="pen-smoothness" class="pen-toolbar-range" type="range" min="0" max="1" step="0.05" value="0.5">
+                    </div>
                 </div>
             </div>
             <div class="toolbar-center">

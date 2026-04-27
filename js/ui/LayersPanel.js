@@ -2,6 +2,12 @@ class LayersPanelManager {
     constructor(engine, layersList) {
         this.engine = engine;
         this.layersList = layersList;
+        this.dragSelect = {
+            active: false,
+            toggled: new Set(),
+            additive: false,
+            suppressClick: false
+        };
         this.init();
     }
 
@@ -13,6 +19,11 @@ class LayersPanelManager {
             if (draggedId && e.target === this.layersList) {
                 this.engine.reorderShape(draggedId, null, 'inside');
             }
+        });
+        window.addEventListener('pointerup', () => {
+            this.dragSelect.suppressClick = this.dragSelect.active;
+            this.dragSelect.active = false;
+            this.dragSelect.toggled.clear();
         });
     }
 
@@ -96,6 +107,10 @@ class LayersPanelManager {
         });
 
         item.addEventListener('click', (e) => {
+            if (this.dragSelect.active || this.dragSelect.suppressClick) {
+                this.dragSelect.suppressClick = false;
+                return;
+            }
             const btn = e.target.closest('.layer-action-btn');
             if (btn) {
                 if (btn.dataset.action === 'lock') { shape.isLocked = !shape.isLocked; this.engine.updateShapeNode(shape); }
@@ -132,11 +147,38 @@ class LayersPanelManager {
             this.engine.fireSelectionChange(); this.engine.updateUI();
         });
 
+        item.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest('.layer-action-btn')) return;
+            this.dragSelect.active = true;
+            this.dragSelect.additive = e.ctrlKey || e.metaKey || e.shiftKey;
+            this.dragSelect.toggled.clear();
+            this.applyDragSelect(shape.id);
+            e.preventDefault();
+        });
+
+        item.addEventListener('pointerenter', () => {
+            if (!this.dragSelect.active) return;
+            this.applyDragSelect(shape.id);
+        });
+
         this.layersList.appendChild(item);
 
         if (shape.type === 'group' || shape.type === 'frame') {
             const children = this.engine.shapes.filter(s => s.groupId === shape.id);
             children.slice().reverse().forEach(c => this.renderNode(c, level + 1));
         }
+    }
+
+    applyDragSelect(shapeId) {
+        if (this.dragSelect.toggled.has(shapeId)) return;
+        this.dragSelect.toggled.add(shapeId);
+        if (!this.dragSelect.additive && this.dragSelect.toggled.size === 1) {
+            this.engine.selectedIds = [shapeId];
+        } else if (!this.engine.selectedIds.includes(shapeId)) {
+            this.engine.selectedIds.push(shapeId);
+        }
+        this.engine.fireSelectionChange();
+        this.engine.updateUI();
     }
 }

@@ -127,9 +127,19 @@ class PropertiesPanelManager {
             this.addSelect('Шрифт', 'fontFamily', shape.fontFamily || 'Inter, sans-serif', [
                 {label: 'Inter', value: 'Inter, sans-serif'},
                 {label: 'Arial', value: 'Arial, sans-serif'},
-                {label: 'Times', value: '"Times New Roman", Times, serif'},
-                {label: 'Courier', value: '"Courier New", Courier, monospace'},
-                {label: 'Comic Sans', value: '"Comic Sans MS", cursive'}
+                {label: 'Times New Roman', value: '"Times New Roman", Times, serif'},
+                {label: 'Courier New', value: '"Courier New", Courier, monospace'},
+                {label: 'Comic Sans', value: '"Comic Sans MS", cursive'},
+                {label: 'Verdana', value: 'Verdana, sans-serif'},
+                {label: 'Georgia', value: 'Georgia, serif'},
+                {label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif'},
+                {label: 'Palatino', value: '"Palatino Linotype", "Book Antiqua", Palatino, serif'},
+                {label: 'Garamond', value: 'Garamond, serif'},
+                {label: 'Helvetica', value: 'Helvetica, Arial, sans-serif'},
+                {label: 'Impact', value: 'Impact, Charcoal, sans-serif'},
+                {label: 'Segoe UI', value: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif'},
+                {label: 'Tahoma', value: 'Tahoma, Geneva, sans-serif'},
+                {label: 'Lucida Console', value: '"Lucida Console", Monaco, monospace'}
             ]);
         }
 

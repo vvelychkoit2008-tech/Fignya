@@ -19,6 +19,9 @@ class ToolbarManager {
             }
         });
         this.activeColorType = null;
+        this.penCurveType = document.getElementById('pen-curve-type');
+        this.penSmoothness = document.getElementById('pen-smoothness');
+        this.penControls = document.getElementById('pen-toolbar-controls');
         this.init();
     }
 
@@ -29,6 +32,7 @@ class ToolbarManager {
                 if (tool === 'image') { this.imageUpload.click(); return; }
                 this.setActiveTool(btn);
                 this.engine.setTool(tool);
+                this.updatePenControlsVisibility();
                 if (tool === 'triangle' || tool === 'star') {
                     // Force refresh contextual toolbar if needed
                 }
@@ -100,6 +104,18 @@ class ToolbarManager {
                 }
             });
         }
+
+        if (this.penCurveType) {
+            this.penCurveType.addEventListener('change', (e) => {
+                this.engine.updatePenOptions({ curveType: e.target.value });
+            });
+        }
+        if (this.penSmoothness) {
+            this.penSmoothness.addEventListener('input', (e) => {
+                this.engine.updatePenOptions({ smoothness: parseFloat(e.target.value) });
+            });
+        }
+        this.updatePenControlsVisibility();
     }
 
     updateProtoHelper(visible) {
@@ -146,6 +162,7 @@ class ToolbarManager {
     setActiveTool(btn) {
         this.toolBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        this.updatePenControlsVisibility();
     }
 
     setActiveMode(btn) {
@@ -156,6 +173,7 @@ class ToolbarManager {
     updateContextualToolbar(shapes) {
         const container = document.getElementById('contextual-toolbar');
         if (!container) return;
+        this.updatePenControlsVisibility();
 
         if (!shapes || shapes.length === 0) {
             container.classList.add('hidden');
@@ -239,5 +257,16 @@ class ToolbarManager {
 
     renderMultiSelectContext(container, shapes) {
         container.innerHTML = `<span style="font-size:11px;opacity:0.6">${shapes.length} об'єктів вибрано</span>`;
+    }
+
+    updatePenControlsVisibility() {
+        if (!this.penControls) return;
+        const visible = this.engine.activeTool === 'pen' || this.engine.selectedIds.some(id => {
+            const shape = this.engine.getShapeById(id);
+            return shape && shape.type === 'path';
+        });
+        this.penControls.classList.toggle('hidden', !visible);
+        if (this.penCurveType) this.penCurveType.value = this.engine.penOptions.curveType;
+        if (this.penSmoothness) this.penSmoothness.value = this.engine.penOptions.smoothness;
     }
 }

@@ -10,6 +10,11 @@ class FihnyaEngine {
         this.activeTool = 'select'; 
         this.mode = 'design'; 
         this.defaultStyle = { fill: '#D9D9D9', stroke: 'none', strokeWidth: 1 };
+        this.penOptions = {
+            curveType: 'cubic',
+            smoothness: 0.5,
+            mirrorHandles: true
+        };
         
         // Interaction State
         this.isDragging = false;
@@ -24,6 +29,7 @@ class FihnyaEngine {
         this.activeHandle = null;
         this.tempShape = null;
         this.tempLinkNode = null;
+        this.penState = null;
 
         // Callbacks
         this.callbacks = {
@@ -75,6 +81,11 @@ class FihnyaEngine {
     setTool(tool) { 
         this.activeTool = tool; 
         if (tool !== 'select') this.selectedIds = []; 
+        if (tool !== 'pen') {
+            this.penState = null;
+            this.isDrawingPen = false;
+            this.tempShape = null;
+        }
         this.updateUI(); 
     }
     
@@ -86,7 +97,58 @@ class FihnyaEngine {
     }
 
     updateUI() {
+        this.refreshFrameClipping();
         this.selection.updateUI();
+    }
+
+    getFrameClipChain(shape) {
+        const ids = [];
+        let current = shape;
+        while (current && current.groupId) {
+            const parent = this.getShapeById(current.groupId);
+            if (!parent) break;
+            if (parent.type === 'frame') ids.push(parent.id);
+            current = parent;
+        }
+        return ids.reverse();
+    }
+
+    refreshFrameClipping() {
+        if (!this.svg) return;
+        let defs = this.svg.querySelector('#frame-clip-defs');
+        if (!defs) {
+            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.setAttribute('id', 'frame-clip-defs');
+            this.svg.insertBefore(defs, this.svg.firstChild);
+        }
+        defs.innerHTML = '';
+
+        const frames = this.shapes.filter(s => s.type === 'frame' && s.node);
+        frames.forEach(frame => {
+            const cp = document.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+            cp.setAttribute('id', `frame-clip-${frame.id}`);
+            cp.setAttribute('clipPathUnits', 'userSpaceOnUse');
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', frame.x);
+            rect.setAttribute('y', frame.y);
+            rect.setAttribute('width', frame.width);
+            rect.setAttribute('height', frame.height);
+            rect.setAttribute('rx', frame.cornerRadius || 0);
+            rect.setAttribute('ry', frame.cornerRadius || 0);
+            cp.appendChild(rect);
+            defs.appendChild(cp);
+        });
+
+        this.shapes.forEach(shape => {
+            if (!shape.node) return;
+            const chain = this.getFrameClipChain(shape);
+            if (!chain.length) {
+                shape.node.removeAttribute('clip-path');
+                return;
+            }
+            const nearest = chain[chain.length - 1];
+            shape.node.setAttribute('clip-path', `url(#frame-clip-${nearest})`);
+        });
     }
 
     // Scene Actions
@@ -160,6 +222,7 @@ class FihnyaEngine {
 
         this.prototype.render();
         this.updateUI();
+        this.refreshFrameClipping();
         this.callbacks.onSceneChange();
         this.saveState();
     }
@@ -214,15 +277,62 @@ class FihnyaEngine {
     }
 
     createShapeParams(type, x, y) {
+        const isPath = type === 'path';
+        const defaultStroke = this.defaultStyle.stroke === 'none' ? '#000000' : this.defaultStyle.stroke;
         const params = { 
             id: this.generateId(), 
             type, x, y, 
             width: 0, height: 0, 
-            fill: this.defaultStyle.fill, 
-            stroke: this.defaultStyle.stroke, 
+            fill: type === 'frame' ? '#FFFFFF' : (isPath ? 'none' : this.defaultStyle.fill), 
+            stroke: isPath ? defaultStroke : this.defaultStyle.stroke, 
             strokeWidth: this.defaultStyle.strokeWidth 
         };
+        if (isPath) {
+            params.curveType = this.penOptions.curveType;
+            params.smoothness = this.penOptions.smoothness;
+            params.isDraft = true;
+        }
         return this.createShapeByType(params);
+    }
+
+    updatePenOptions(patch) {
+        this.penOptions = { ...this.penOptions, ...patch };
+        this.selectedIds.forEach(id => {
+            const shape = this.getShapeById(id);
+            if (shape && shape.type === 'path') {
+                if (patch.curveType !== undefined) shape.curveType = patch.curveType;
+                if (patch.smoothness !== undefined) shape.smoothness = patch.smoothness;
+                this.updateShapeNode(shape);
+            }
+        });
+        if (this.isDrawingPen && this.tempShape) {
+            this.tempShape.curveType = this.penOptions.curveType;
+            this.tempShape.smoothness = this.penOptions.smoothness;
+            this.updateShapeNode(this.tempShape);
+            this.updateUI();
+        }
+        this.callbacks.onSceneChange();
+    }
+
+    isDescendant(candidateId, parentId) {
+        let current = this.getShapeById(candidateId);
+        while (current && current.groupId) {
+            if (current.groupId === parentId) return true;
+            current = this.getShapeById(current.groupId);
+        }
+        return false;
+    }
+
+    getDeepestContainerAt(x, y, options = {}) {
+        const { includeGroups = false, excludeId = null } = options;
+        const candidates = [...this.shapes].reverse().filter(s => {
+            if (excludeId && s.id === excludeId) return false;
+            if (s.isHidden || s.isLocked) return false;
+            if (s.type !== 'frame' && !(includeGroups && s.type === 'group')) return false;
+            return x >= s.x && x <= s.x + s.width && y >= s.y && y <= s.y + s.height;
+        });
+        candidates.sort((a, b) => (a.width * a.height) - (b.width * b.height));
+        return candidates[0] || null;
     }
 
     renderShape(shape) { if (shape.render) shape.render(this.svg); }
@@ -232,6 +342,7 @@ class FihnyaEngine {
         const imgShape = this.createShapeParams('image', x, y);
         imgShape.width = w; imgShape.height = h; imgShape.src = dataUrl;
         this.shapes.push(imgShape); this.renderShape(imgShape); this.saveState(); this.callbacks.onSceneChange();
+        this.refreshFrameClipping();
     }
 
     // Selection Logic Extended
@@ -250,6 +361,7 @@ class FihnyaEngine {
         this.shapes.push(gShape);
         this.selectedIds = [groupId];
         this.updateUI(); this.callbacks.onSceneChange(); this.saveState();
+        this.refreshFrameClipping();
     }
 
     ungroupSelected() {
@@ -268,6 +380,7 @@ class FihnyaEngine {
         });
         this.selectedIds = [...new Set(newSelection)];
         this.updateUI(); this.callbacks.onSceneChange(); this.saveState();
+        this.refreshFrameClipping();
     }
 
     toggleLockSelected() {
@@ -404,6 +517,23 @@ class FihnyaEngine {
         this.selectedIds.forEach(id => {
             const shape = this.getShapeById(id);
             if (shape) {
+                if (shape.type === 'path' && ['x', 'y', 'width', 'height'].includes(key)) {
+                    const numericValue = parseFloat(value);
+                    if (isNaN(numericValue)) return;
+                    const targetX = key === 'x' ? numericValue : shape.x;
+                    const targetY = key === 'y' ? numericValue : shape.y;
+                    const targetW = key === 'width' ? Math.max(1, numericValue) : shape.width;
+                    const targetH = key === 'height' ? Math.max(1, numericValue) : shape.height;
+                    if (key === 'x' || key === 'y') {
+                        shape.translate(targetX - shape.x, targetY - shape.y);
+                    } else {
+                        shape.scaleToBounds(targetX, targetY, targetW, targetH);
+                    }
+                    this.updateShapeNode(shape);
+                    this.callbacks.onPropertyChange(shape, key, numericValue);
+                    changed = true;
+                    return;
+                }
                 if (['x','y','width','height','strokeWidth','gap','padding','fontSize','fontWeight','cornerRadius','opacity','rotation'].includes(key)) {
                     value = parseFloat(value);
                     if(isNaN(value)) return;
@@ -423,6 +553,7 @@ class FihnyaEngine {
             this.updateUI();
             this.callbacks.onSceneChange();
             this.saveState();
+            this.refreshFrameClipping();
         }
     }
 
@@ -446,8 +577,41 @@ class FihnyaEngine {
         this.prototype.links = data.links || [];
         this.selectedIds = []; 
         this.viewport.update(true); 
+        this.refreshFrameClipping();
         this.prototype.render(); 
         this.callbacks.onSceneChange();
+    }
+
+    updatePenHandle(point, pointer, altKey) {
+        const dx = pointer.x - point.x;
+        const dy = pointer.y - point.y;
+        if (altKey) {
+            return {
+                handleIn: null,
+                handleOut: { x: point.x + dx, y: point.y + dy }
+            };
+        }
+        return {
+            handleIn: { x: point.x - dx, y: point.y - dy },
+            handleOut: { x: point.x + dx, y: point.y + dy }
+        };
+    }
+
+    startPathEditFromHandle(target) {
+        const shape = this.getShapeById(target.dataset.shapeId);
+        if (!shape || shape.type !== 'path') return false;
+        this.selectedIds = [shape.id];
+        this.tempShape = shape;
+        this.isDrawingPen = false;
+        this.penState = {
+            editing: true,
+            shapeId: shape.id,
+            pointIndex: parseInt(target.dataset.pointIndex, 10),
+            handleType: target.dataset.handleType || 'point'
+        };
+        this.fireSelectionChange();
+        this.updateUI();
+        return true;
     }
 
     // Interaction Handlers
@@ -520,11 +684,21 @@ class FihnyaEngine {
                 if (this.isDrawingPen && this.tempShape) {
                     e.preventDefault();
                     this.isDrawingPen = false;
-                    this.tempShape.updateBounds();
-                    this.updateUI();
+                    this.tempShape.setPreviewPoint(null);
+                    if (this.tempShape.points.length < 2) {
+                        this.deleteShapeObj(this.tempShape.id);
+                        this.selectedIds = [];
+                    } else {
+                        this.tempShape.finalize();
+                        this.selectedIds = [this.tempShape.id];
+                    }
+                    this.penState = null;
                     this.fireSelectionChange();
+                    this.callbacks.onSceneChange();
                     this.tempShape = null;
                     this.saveState();
+                    this.refreshFrameClipping();
+                    this.updateUI();
                 }
                 if (e.key === 'Escape') {
                     this.setTool('select');
@@ -608,6 +782,10 @@ class FihnyaEngine {
         this.lastMouse = { x: e.clientX, y: e.clientY };
         this.dragStart = { ...pt };
 
+        if (e.target.classList.contains('path-point') || e.target.classList.contains('path-handle')) {
+            if (this.startPathEditFromHandle(e.target)) return;
+        }
+
         if (e.target.classList.contains('handle')) {
             this.isResizing = true;
             this.activeHandle = e.target.dataset.dir;
@@ -669,15 +847,41 @@ class FihnyaEngine {
             this.fireSelectionChange();
             this.updateUI();
         } else if (this.activeTool === 'pen') {
-            if (!this.isDrawingPen) {
+            if (!this.isDrawingPen || !this.tempShape) {
                 this.isDrawingPen = true;
                 this.tempShape = this.createShapeParams('path', pt.x, pt.y);
+                this.tempShape.addPoint(pt.x, pt.y);
                 this.shapes.push(this.tempShape);
                 this.renderShape(this.tempShape);
+                this.penState = { isDraggingHandle: true, pointIndex: 0 };
             } else {
-                this.tempShape.d += ` L ${pt.x} ${pt.y}`;
+                this.tempShape.setPreviewPoint(null);
+                this.tempShape.addPoint(pt.x, pt.y);
+                this.penState = { isDraggingHandle: true, pointIndex: this.tempShape.points.length - 1 };
                 this.updateShapeNode(this.tempShape);
-            }      
+            }
+            this.selectedIds = [this.tempShape.id];
+            this.fireSelectionChange();
+            this.updateUI();
+        } else if (this.activeTool === 'text') {
+            // Check if clicking on existing text shape
+            const clickedShape = this.getShapeFromNode(e.target);
+            if (clickedShape && clickedShape.type === 'text' && !clickedShape.isLocked && !clickedShape.isHidden) {
+                // Edit existing text
+                this.selectedIds = [clickedShape.id];
+                this.fireSelectionChange();
+                this.callbacks.onDoubleClickText(clickedShape, e);
+            } else {
+                // Create new text
+                this.tempShape = this.createShapeParams('text', pt.x, pt.y);
+                this.shapes.push(this.tempShape);
+                this.renderShape(this.tempShape);
+                this.selectedIds = [this.tempShape.id];
+                this.fireSelectionChange();
+                this.updateUI();
+                // Auto-start editing new text
+                this.callbacks.onDoubleClickText(this.tempShape, e);
+            }
         } else if (this.activeTool !== 'image') {
             this.isDrawing = true;
             this.tempShape = this.createShapeParams(this.activeTool, pt.x, pt.y);
@@ -697,8 +901,14 @@ class FihnyaEngine {
 
         if (this.isDrawingPen && this.activeTool !== 'pen') {
             this.isDrawingPen = false;
-            if (this.tempShape) this.tempShape.updateBounds();
+            if (this.tempShape) {
+                this.tempShape.setPreviewPoint(null);
+                if (this.tempShape.points.length >= 2) this.tempShape.finalize();
+                else this.deleteShapeObj(this.tempShape.id);
+            }
+            this.penState = null;
             this.tempShape = null;
+            this.refreshFrameClipping();
         }
 
         const pt = this.viewport.getCanvasPoint(e);
@@ -713,7 +923,28 @@ class FihnyaEngine {
             this.rubberbandBox.style.width = Math.abs(w) + 'px';
             this.rubberbandBox.style.height = Math.abs(h) + 'px';
         } else if (this.isDrawingPen && this.tempShape) {
-            this.tempShape.node.setAttribute('d', this.tempShape.d + ` L ${pt.x} ${pt.y}`);
+            if (this.penState && this.penState.isDraggingHandle) {
+                const idx = this.penState.pointIndex;
+                const point = this.tempShape.points[idx];
+                if (point) {
+                    const handles = this.updatePenHandle(point, pt, e.altKey);
+                    this.tempShape.setPointHandles(idx, handles.handleIn, handles.handleOut);
+                }
+            } else {
+                this.tempShape.setPreviewPoint(pt);
+            }
+            this.updateShapeNode(this.tempShape);
+        } else if (this.penState && this.penState.editing) {
+            const shape = this.getShapeById(this.penState.shapeId);
+            if (!shape || shape.type !== 'path') return;
+            const mirror = !e.altKey && this.penOptions.mirrorHandles;
+            if (this.penState.handleType === 'point') {
+                shape.movePoint(this.penState.pointIndex, pt.x, pt.y);
+            } else {
+                shape.moveHandle(this.penState.pointIndex, this.penState.handleType, pt.x, pt.y, mirror);
+            }
+            this.updateShapeNode(shape);
+            this.updateUI();
         } else if (this.isDrawingLink && this.tempShape) {
             const sx = this.tempShape.x + this.tempShape.width;
             const sy = this.tempShape.y + this.tempShape.height / 2;
@@ -772,7 +1003,12 @@ class FihnyaEngine {
                 if (shape.type === 'group' || shape.type === 'frame') {
                     this.shapes.filter(c => c.groupId === shapeId).forEach(c => moveShapeRecursive(c.id, dx, dy));
                 }
-                shape.x += dx; shape.y += dy;
+                // For path shapes, use the translate method to update points
+                if (shape.type === 'path') {
+                    shape.translate(dx, dy);
+                } else {
+                    shape.x += dx; shape.y += dy;
+                }
                 this.updateShapeNode(shape);
             };
 
@@ -788,6 +1024,7 @@ class FihnyaEngine {
                 } else this.autoLayout.triggerPass(shape);
             });
             this.updateUI();
+            this.refreshFrameClipping();
         } else if (this.isResizing && this.selectedIds.length === 1) {
             const shape = this.getShapeById(this.selectedIds[0]);
             const dx = pt.x - this.dragStart.x; const dy = pt.y - this.dragStart.y;
@@ -818,6 +1055,7 @@ class FihnyaEngine {
             this.updateShapeNode(shape);
             if (shape.isAutoLayout) this.autoLayout.apply(shape);
             this.updateUI();
+            this.refreshFrameClipping();
         }
     }
 
@@ -851,7 +1089,7 @@ class FihnyaEngine {
             if (this.tempShape.width < 5 && this.tempShape.height < 5 && this.tempShape.type !== 'text' && this.tempShape.type !== 'path') this.deleteShapeObj(this.tempShape.id);
             else {
                 const tCx = this.tempShape.x + this.tempShape.width/2; const tCy = this.tempShape.y + this.tempShape.height/2;
-                const container = [...this.shapes].reverse().find(s => (s.type === 'frame' || s.type === 'group') && s.id !== this.tempShape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
+                const container = this.getDeepestContainerAt(tCx, tCy, { includeGroups: true, excludeId: this.tempShape.id });
                 if (container) this.tempShape.groupId = container.id;
                 this.selectedIds = [this.tempShape.id]; 
                 
@@ -869,6 +1107,7 @@ class FihnyaEngine {
                 this.fireSelectionChange(); this.updateUI();
                 if (this.tempShape.type === 'text') this.callbacks.onDoubleClickText(this.tempShape, e);
                 this.callbacks.onSceneChange(); this.saveState();
+                this.refreshFrameClipping();
             }
             this.tempShape = null;
         } else if (this.isDragging) {
@@ -878,9 +1117,9 @@ class FihnyaEngine {
                 if (!shape || shape.type === 'group' || shape.type === 'frame') return;
                 
                 const tCx = shape.x + shape.width/2; const tCy = shape.y + shape.height/2;
-                const container = [...this.shapes].reverse().find(s => s.type === 'frame' && s.id !== shape.id && !s.isHidden && !s.isLocked && tCx >= s.x && tCx <= s.x + s.width && tCy >= s.y && tCy <= s.y + s.height);
+                const container = this.getDeepestContainerAt(tCx, tCy, { includeGroups: false, excludeId: shape.id });
                 
-                if (container) {
+                if (container && !this.isDescendant(container.id, shape.id)) {
                     shape.groupId = container.id;
                     if (container.isAutoLayout) this.autoLayout.apply(container);
                 } else if (shape.groupId) {
@@ -890,9 +1129,13 @@ class FihnyaEngine {
                 }
             });
             this.callbacks.onSceneChange(); this.saveState();
+            this.refreshFrameClipping();
         } else if (this.isResizing) {
             this.callbacks.onSceneChange(); this.saveState();
+            this.refreshFrameClipping();
         }
+        if (this.isDrawingPen && this.penState) this.penState.isDraggingHandle = false;
+        if (this.penState && this.penState.editing) this.penState = null;
         this.isDragging = false; this.isResizing = false; this.activeHandle = null; this.selection.smartGuides = [];
         this.updateUI();
     }
